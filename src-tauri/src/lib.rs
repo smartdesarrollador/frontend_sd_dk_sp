@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg(target_os = "windows")]
