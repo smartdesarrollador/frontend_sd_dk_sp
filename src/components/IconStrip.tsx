@@ -1,4 +1,4 @@
-import { Home, Files, MessageSquare, Bell, User, Settings } from "lucide-react";
+import { Home, Files, MessageSquare, Bell, Code2, User, Settings } from "lucide-react";
 import type { PanelId, NavItem } from "../types";
 import NavIcon from "./NavIcon";
 
@@ -7,6 +7,7 @@ const mainNavItems: NavItem[] = [
   { id: "files", icon: Files, label: "Files" },
   { id: "chat", icon: MessageSquare, label: "Chat" },
   { id: "alerts", icon: Bell, label: "Alerts" },
+  { id: "snippets", icon: Code2, label: "Snippets" },
   { id: "profile", icon: User, label: "Profile" },
 ];
 

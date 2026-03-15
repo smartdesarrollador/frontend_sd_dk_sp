@@ -3,6 +3,7 @@ export type PanelId =
   | "files"
   | "chat"
   | "alerts"
+  | "snippets"
   | "profile"
   | "settings";
 
