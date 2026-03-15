@@ -11,6 +11,7 @@ export interface DesktopUser {
 export interface DesktopTenant {
   id: string
   name: string
+  slug: string
   plan: string
   primaryColor?: string
   subdomain?: string

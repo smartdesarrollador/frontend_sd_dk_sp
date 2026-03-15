@@ -94,14 +94,15 @@ function SnippetsSkeleton() {
 export default function SnippetsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const accessToken     = useAuthStore((s) => s.accessToken)
+  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
   const [snippets, setSnippets] = useState<Snippet[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchSnippets = useCallback(async () => {
-    if (!accessToken) {
-      console.warn("[SnippetsPanel] fetchSnippets called without accessToken")
+    if (!accessToken || !tenantSlug) {
+      console.warn("[SnippetsPanel] fetchSnippets called without accessToken or tenantSlug")
       return
     }
     setIsLoading(true)
@@ -114,7 +115,10 @@ export default function SnippetsPanel() {
 
     try {
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Tenant-Slug': tenantSlug,
+        },
       })
       console.log("[SnippetsPanel] response status:", res.status, res.statusText)
 
@@ -136,7 +140,7 @@ export default function SnippetsPanel() {
     } finally {
       setIsLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, tenantSlug])
 
   useEffect(() => {
     console.log("[SnippetsPanel] isAuthenticated changed →", isAuthenticated)
