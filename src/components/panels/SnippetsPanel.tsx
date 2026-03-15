@@ -100,25 +100,46 @@ export default function SnippetsPanel() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchSnippets = useCallback(async () => {
-    if (!accessToken) return
+    if (!accessToken) {
+      console.warn("[SnippetsPanel] fetchSnippets called without accessToken")
+      return
+    }
     setIsLoading(true)
     setError(null)
+
+    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
+    const url = `${apiBase}/api/v1/app/snippets/`
+    console.log("[SnippetsPanel] fetching →", url)
+    console.log("[SnippetsPanel] token (primeros 20 chars):", accessToken.slice(0, 20) + "…")
+
     try {
-      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000"
-      const res = await fetch(`${apiBase}/api/v1/app/snippets/`, {
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
-      if (!res.ok) throw new Error(`Error ${res.status}`)
+      console.log("[SnippetsPanel] response status:", res.status, res.statusText)
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "(sin body)")
+        console.error("[SnippetsPanel] HTTP error body:", body)
+        throw new Error(`HTTP ${res.status} ${res.statusText}`)
+      }
+
       const data = await res.json()
-      setSnippets(data.snippets ?? data.results ?? [])
+      console.log("[SnippetsPanel] data keys:", Object.keys(data))
+      const list: Snippet[] = data.snippets ?? data.results ?? []
+      console.log("[SnippetsPanel] snippets count:", list.length)
+      setSnippets(list)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar snippets")
+      const msg = err instanceof Error ? err.message : "Error al cargar snippets"
+      console.error("[SnippetsPanel] fetch error:", err)
+      setError(msg)
     } finally {
       setIsLoading(false)
     }
   }, [accessToken])
 
   useEffect(() => {
+    console.log("[SnippetsPanel] isAuthenticated changed →", isAuthenticated)
     if (isAuthenticated) {
       fetchSnippets()
     } else {
@@ -152,7 +173,10 @@ export default function SnippetsPanel() {
       {!isLoading && error && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <AlertCircle size={28} className="text-red-400" />
-          <p className="text-sm text-gray-400">{error}</p>
+              <p className="text-sm text-gray-400">{error}</p>
+          <p className="text-[10px] text-gray-600 font-mono break-all">
+            {import.meta.env.VITE_API_URL ?? "http://rbac.local.test"}/api/v1/app/snippets/
+          </p>
           <button
             onClick={fetchSnippets}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
