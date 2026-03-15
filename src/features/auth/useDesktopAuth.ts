@@ -56,6 +56,8 @@ export function useDesktopAuth() {
     setIsLoggingIn(true)
     try {
       await invoke('open_hub_login', { stateNonce: nonce })
+      // Reset after 120s if deep link never arrives
+      setTimeout(() => setIsLoggingIn(false), 120_000)
     } catch (e) {
       console.error('[DesktopAuth] Failed to open hub login', e)
       setIsLoggingIn(false)
