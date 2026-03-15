@@ -13,6 +13,9 @@
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "core:window:allow-set-always-on-top",
-    "core:window:allow-set-skip-taskbar"
+    "core:window:allow-set-skip-taskbar",
+    "deep-link:default",
+    "deep-link:allow-register",
+    "deep-link:allow-get-current"
   ]
 }

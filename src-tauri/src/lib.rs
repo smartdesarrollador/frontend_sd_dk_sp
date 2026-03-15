@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use tauri::{Manager, State};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg(target_os = "windows")]
 mod appbar;
@@ -22,6 +23,8 @@ impl Default for AppBarHandle {
 }
 
 pub struct AppBarMutex(pub Mutex<AppBarHandle>);
+
+pub struct DesktopAuthMutex(pub Mutex<Option<serde_json::Value>>);
 
 #[cfg(target_os = "windows")]
 fn get_hwnd(window: &tauri::WebviewWindow) -> Result<usize, String> {
@@ -115,13 +118,69 @@ fn unregister_appbar(state: State<'_, AppBarMutex>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_hub_login(state_nonce: String) -> Result<(), String> {
+    let url = format!(
+        "http://hub.local.test/login?source=desktop&state={}",
+        state_nonce
+    );
+    opener::open(url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn store_desktop_auth(
+    state: State<'_, DesktopAuthMutex>,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    *guard = Some(payload);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_desktop_auth(
+    state: State<'_, DesktopAuthMutex>,
+) -> Result<Option<serde_json::Value>, String> {
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(guard.clone())
+}
+
+#[tauri::command]
+fn clear_desktop_auth(state: State<'_, DesktopAuthMutex>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    *guard = None;
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppBarMutex(Mutex::new(AppBarHandle::default())))
+        .manage(DesktopAuthMutex(Mutex::new(None)))
+        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|app| {
+            // Register rbacdesktop:// URL scheme for the current exe (persists in Registry during dev)
+            app.deep_link().register("rbacdesktop")?;
+
+            // Forward deep-link URLs as Tauri events to the frontend
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let urls = event.urls();
+                if let Some(url) = urls.first() {
+                    let _ = handle.emit("desktop-auth-callback", url.to_string());
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             register_appbar,
             resize_appbar,
             unregister_appbar,
+            open_hub_login,
+            store_desktop_auth,
+            get_desktop_auth,
+            clear_desktop_auth,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
