@@ -16,8 +16,6 @@
     "core:window:allow-set-skip-taskbar",
     "deep-link:default",
     "deep-link:allow-register",
-    "deep-link:allow-get-current",
-    "core:fetch:default",
-    "core:fetch:allow-fetch"
+    "deep-link:allow-get-current"
   ]
 }
