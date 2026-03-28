@@ -4,6 +4,7 @@ export type PanelId =
   | "chat"
   | "alerts"
   | "snippets"
+  | "tasks"
   | "profile"
   | "settings";
 
