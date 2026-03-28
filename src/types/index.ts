@@ -5,6 +5,7 @@ export type PanelId =
   | "alerts"
   | "snippets"
   | "tasks"
+  | "notes"
   | "profile"
   | "settings";
 

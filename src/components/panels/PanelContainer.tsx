@@ -6,6 +6,7 @@ import ChatPanel from "./ChatPanel";
 import AlertsPanel from "./AlertsPanel";
 import SnippetsPanel from "./SnippetsPanel";
 import TasksPanel from "./TasksPanel";
+import NotesPanel from "./NotesPanel";
 import ProfilePanel from "./ProfilePanel";
 import SettingsPanel from "./SettingsPanel";
 
@@ -16,6 +17,7 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   alerts: AlertsPanel,
   snippets: SnippetsPanel,
   tasks: TasksPanel,
+  notes: NotesPanel,
   profile: ProfilePanel,
   settings: SettingsPanel,
 };
