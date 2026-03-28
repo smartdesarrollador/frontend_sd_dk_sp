@@ -10,6 +10,7 @@ import NotesPanel from "./NotesPanel";
 import ContactsPanel from "./ContactsPanel";
 import BookmarksPanel from "./BookmarksPanel";
 import ProjectsPanel from "./ProjectsPanel";
+import CalendarPanel from "./CalendarPanel";
 import ProfilePanel from "./ProfilePanel";
 import SettingsPanel from "./SettingsPanel";
 
@@ -24,6 +25,7 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   contacts:  ContactsPanel,
   bookmarks: BookmarksPanel,
   projects:  ProjectsPanel,
+  calendar:  CalendarPanel,
   profile:   ProfilePanel,
   settings: SettingsPanel,
 };
