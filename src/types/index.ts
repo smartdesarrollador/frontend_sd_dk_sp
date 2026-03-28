@@ -6,6 +6,7 @@ export type PanelId =
   | "snippets"
   | "tasks"
   | "notes"
+  | "contacts"
   | "profile"
   | "settings";
 
