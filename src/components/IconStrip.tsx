@@ -1,4 +1,5 @@
-import { Home, Files, MessageSquare, Bell, Code2, CheckSquare, StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User, Settings } from "lucide-react";
+import { Home, Files, MessageSquare, Bell, Code2, CheckSquare, StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User, Settings, X } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { PanelId, NavItem } from "../types";
 import NavIcon from "./NavIcon";
 
@@ -48,6 +49,13 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
             onClick={() => onPanelChange(item.id)}
           />
         ))}
+        <button
+          onClick={() => getCurrentWindow().close()}
+          title="Cerrar aplicación"
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+        >
+          <X size={16} />
+        </button>
       </div>
     </div>
   );
