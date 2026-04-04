@@ -31,3 +31,7 @@ npm-debug.log*
 Thumbs.db
 
 util/
+
+src-tauri/
+
+src-tauri/tauri.conf.json

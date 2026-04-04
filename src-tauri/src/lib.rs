@@ -108,9 +108,10 @@ fn unregister_appbar(state: State<'_, AppBarMutex>) -> Result<(), String> {
 
 #[tauri::command]
 fn open_hub_login(state_nonce: String) -> Result<(), String> {
+    let hub_url = env!("HUB_URL");
     let url = format!(
-        "http://hub.local.test/login?source=desktop&state={}",
-        state_nonce
+        "{}/login?source=desktop&state={}",
+        hub_url, state_nonce
     );
     opener::open(url).map_err(|e| e.to_string())
 }

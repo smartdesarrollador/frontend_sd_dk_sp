@@ -27,12 +27,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' 'unsafe-inline'; connect-src http://rbac.local.test"
+      "csp": "default-src 'self' 'unsafe-inline'; connect-src http://rbac.local.test https://api-rbac.smartdigitaltec.com http://ipc.localhost http://tauri.localhost"
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
+    "active": true,
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

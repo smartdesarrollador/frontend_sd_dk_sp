@@ -13,8 +13,10 @@ export type PanelId =
   | "profile"
   | "settings";
 
+import type { LucideIcon } from "lucide-react";
+
 export interface NavItem {
   id: PanelId;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   label: string;
 }
