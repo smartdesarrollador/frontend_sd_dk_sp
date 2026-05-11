@@ -19,6 +19,9 @@ fn main() {
         .unwrap_or_else(|_| "http://hub.local.test".to_string());
 
     println!("cargo:rustc-env=HUB_URL={}", hub_url);
+    println!("cargo:rerun-if-changed=../.env");
+    println!("cargo:rerun-if-changed=../.env.production");
+    println!("cargo:rerun-if-env-changed=VITE_HUB_URL");
 
     tauri_build::build()
 }
