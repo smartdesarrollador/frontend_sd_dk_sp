@@ -6,6 +6,7 @@ import {
   Phone, Building2, Briefcase, FileText, Mail,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
+import { apiFetch } from "../../lib/apiFetch"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -249,15 +250,11 @@ function ContactForm({
   groups,
   onCancel,
   onSaved,
-  accessToken,
-  tenantSlug,
 }: {
   editContact: Contact | null
   groups: ContactGroup[]
   onCancel: () => void
   onSaved: (contact: Contact, isEdit: boolean) => void
-  accessToken: string
-  tenantSlug: string
 }) {
   const isEdit = editContact !== null
   const [form, setForm]                 = useState(isEdit ? contactToForm(editContact!) : EMPTY_FORM)
@@ -275,19 +272,14 @@ function ContactForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = isEdit
-      ? `${apiBase}/api/v1/app/contacts/${editContact!.id}/`
-      : `${apiBase}/api/v1/app/contacts/`
+    const path = isEdit
+      ? `/api/v1/app/contacts/${editContact!.id}/`
+      : `/api/v1/app/contacts/`
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(path, {
         method: isEdit ? "PATCH" : "POST",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-          "Content-Type":  "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name:      form.name.trim(),
           email:     form.email.trim() || "",
@@ -440,8 +432,6 @@ function ContactForm({
 // ---------------------------------------------------------------------------
 export default function ContactsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const accessToken     = useAuthStore((s) => s.accessToken)
-  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
   const [contacts, setContacts]     = useState<Contact[]>([])
   const [groups, setGroups]         = useState<ContactGroup[]>([])
@@ -455,53 +445,31 @@ export default function ContactsPanel() {
 
   const showForm = formTarget !== undefined
 
-  const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-
   const fetchGroups = useCallback(async () => {
-    if (!accessToken || !tenantSlug) return
+    if (!isAuthenticated) return
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/contacts/groups/`, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch("/api/v1/app/contacts/groups/")
       if (!res.ok) return
       const data = await res.json()
       setGroups(data.groups ?? data.results ?? [])
     } catch {
       // silent — groups are optional for filter UI
     }
-  }, [accessToken, tenantSlug, apiBase])
+  }, [isAuthenticated])
 
   const fetchContacts = useCallback(async () => {
-    if (!accessToken || !tenantSlug) {
-      console.warn("[ContactsPanel] fetchContacts called without accessToken or tenantSlug")
-      return
-    }
+    if (!isAuthenticated) return
     setIsLoading(true)
     setError(null)
-
-    console.log("[ContactsPanel] fetching →", `${apiBase}/api/v1/app/contacts/`)
-
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/contacts/`, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      console.log("[ContactsPanel] response status:", res.status, res.statusText)
-
+      const res = await apiFetch("/api/v1/app/contacts/")
       if (!res.ok) {
         const body = await res.text().catch(() => "(sin body)")
         console.error("[ContactsPanel] HTTP error body:", body)
         throw new Error(`HTTP ${res.status} ${res.statusText}`)
       }
-
       const data = await res.json()
       const list: Contact[] = data.contacts ?? data.results ?? []
-      console.log("[ContactsPanel] contacts count:", list.length)
       setContacts(list)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error al cargar contactos"
@@ -510,7 +478,7 @@ export default function ContactsPanel() {
     } finally {
       setIsLoading(false)
     }
-  }, [accessToken, tenantSlug, apiBase])
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -534,15 +502,8 @@ export default function ContactsPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!accessToken || !tenantSlug) return
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/contacts/${id}/`, {
-        method: "DELETE",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch(`/api/v1/app/contacts/${id}/`, { method: "DELETE" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setContacts((prev) => prev.filter((c) => c.id !== id))
       if (expandedId === id) setExpandedId(null)
@@ -626,12 +587,10 @@ export default function ContactsPanel() {
       </header>
 
       {/* Create / Edit form */}
-      {showForm && accessToken && tenantSlug && (
+      {showForm && (
         <ContactForm
           editContact={formTarget ?? null}
           groups={groups}
-          accessToken={accessToken}
-          tenantSlug={tenantSlug}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
         />
@@ -690,7 +649,7 @@ export default function ContactsPanel() {
           <AlertCircle size={28} className="text-red-400" />
           <p className="text-sm text-gray-400">{error}</p>
           <p className="text-[10px] text-gray-600 font-mono break-all">
-            {apiBase}/api/v1/app/contacts/
+            /api/v1/app/contacts/
           </p>
           <button
             onClick={fetchContacts}

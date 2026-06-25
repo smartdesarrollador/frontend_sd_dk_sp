@@ -29,6 +29,7 @@ interface DesktopAuthState {
     user: DesktopUser,
     tenant: DesktopTenant,
   ) => void
+  setAccessToken: (accessToken: string, refreshToken: string) => void
   clearAuth: () => void
 }
 
@@ -54,6 +55,12 @@ export const useAuthStore = create<DesktopAuthState>((set) => ({
     localStorage.setItem('desktop-authUser', JSON.stringify(user))
     localStorage.setItem('desktop-authTenant', JSON.stringify(tenant))
     set({ isAuthenticated: true, accessToken, refreshToken, user, tenant })
+  },
+
+  setAccessToken: (accessToken, refreshToken) => {
+    localStorage.setItem('desktop-accessToken', accessToken)
+    localStorage.setItem('desktop-refreshToken', refreshToken)
+    set({ accessToken, refreshToken })
   },
 
   clearAuth: () => {
