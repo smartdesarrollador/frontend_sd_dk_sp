@@ -2,6 +2,7 @@ import { Home, Files, MessageSquare, Bell, Code2, CheckSquare, StickyNote, Users
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { PanelId, NavItem } from "../types";
 import NavIcon from "./NavIcon";
+import { useNotificationsStore } from "../store/notificationsStore";
 
 const mainNavItems: NavItem[] = [
   { id: "home", icon: Home, label: "Home" },
@@ -28,17 +29,37 @@ interface IconStripProps {
 }
 
 export default function IconStrip({ activePanel, onPanelChange }: IconStripProps) {
+  const unreadCount = useNotificationsStore((s) => s.unreadCount)
+
   return (
     <div className="flex h-full w-[60px] flex-col items-center justify-between bg-[#1e1e2e] py-4">
       <div className="flex flex-col items-center gap-1">
-        {mainNavItems.map((item) => (
-          <NavIcon
-            key={item.id}
-            item={item}
-            isActive={activePanel === item.id}
-            onClick={() => onPanelChange(item.id)}
-          />
-        ))}
+        {mainNavItems.map((item) => {
+          if (item.id === "alerts") {
+            return (
+              <div key="alerts" className="relative">
+                <NavIcon
+                  item={item}
+                  isActive={activePanel === item.id}
+                  onClick={() => onPanelChange(item.id)}
+                />
+                {unreadCount > 0 && (
+                  <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </div>
+            )
+          }
+          return (
+            <NavIcon
+              key={item.id}
+              item={item}
+              isActive={activePanel === item.id}
+              onClick={() => onPanelChange(item.id)}
+            />
+          )
+        })}
       </div>
       <div className="flex flex-col items-center gap-1">
         {bottomNavItems.map((item) => (
