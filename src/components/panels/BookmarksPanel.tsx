@@ -3,7 +3,7 @@ import {
   Lock, Bookmark, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check,
-  Globe, Tag, ExternalLink, Clipboard,
+  Globe, Tag, ExternalLink, Clipboard, Copy,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
@@ -82,6 +82,7 @@ function BookmarkItemRow({
   onDelete: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copied, setCopied]               = useState(false)
   const [faviconSrc]                      = useState(() => getFaviconSrc(bookmark))
   const [faviconFailed, setFaviconFailed] = useState(!faviconSrc)
 
@@ -93,6 +94,13 @@ function BookmarkItemRow({
   function handleOpenUrl(e: React.MouseEvent) {
     stop(e)
     window.open(bookmark.url, "_blank", "noopener,noreferrer")
+  }
+
+  async function handleCopyUrl(e: React.MouseEvent) {
+    stop(e)
+    await navigator.clipboard.writeText(bookmark.url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -153,6 +161,17 @@ function BookmarkItemRow({
           </div>
         ) : (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={handleCopyUrl}
+              className={`rounded p-1 transition-colors ${
+                copied
+                  ? "text-green-400"
+                  : "text-gray-500 hover:text-teal-300 hover:bg-teal-500/20"
+              }`}
+              title={copied ? "¡Copiado!" : "Copiar URL"}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </button>
             <button
               onClick={handleOpenUrl}
               className="rounded p-1 text-gray-500 hover:text-green-300 hover:bg-green-500/20 transition-colors"

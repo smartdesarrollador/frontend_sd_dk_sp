@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Lock, Users, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
-  Plus, Loader2, Pencil, Trash2, Check,
+  Plus, Loader2, Pencil, Trash2, Check, Copy,
   Phone, Building2, Briefcase, FileText, Mail,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
@@ -85,8 +85,17 @@ function ContactItem({
   onDelete: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   function stop(e: React.MouseEvent) { e.stopPropagation() }
+
+  async function handleCopyEmail(e: React.MouseEvent) {
+    stop(e)
+    if (!contact.email) return
+    await navigator.clipboard.writeText(contact.email)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
     <div className="rounded-md overflow-hidden">
@@ -139,6 +148,19 @@ function ContactItem({
           </div>
         ) : (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            {contact.email && (
+              <button
+                onClick={handleCopyEmail}
+                className={`rounded p-1 transition-colors ${
+                  copied
+                    ? "text-green-400"
+                    : "text-gray-500 hover:text-teal-300 hover:bg-teal-500/20"
+                }`}
+                title={copied ? "¡Copiado!" : "Copiar email"}
+              >
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            )}
             <button
               onClick={(e) => { stop(e); onEdit() }}
               className="rounded p-1 text-gray-500 hover:text-blue-300 hover:bg-blue-500/20 transition-colors"

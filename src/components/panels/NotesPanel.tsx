@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Lock, StickyNote, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
-  Plus, Loader2, Pencil, Trash2, Check, Pin, PinOff,
+  Plus, Loader2, Pencil, Trash2, Check, Pin, PinOff, Copy,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 
@@ -72,6 +72,7 @@ function NoteItem({
   onTogglePin: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   function stop(e: React.MouseEvent) { e.stopPropagation() }
 
@@ -89,6 +90,13 @@ function NoteItem({
   }
   function handlePinClick(e: React.MouseEvent) {
     stop(e); onTogglePin()
+  }
+  async function handleCopy(e: React.MouseEvent) {
+    stop(e)
+    if (!note.content) return
+    await navigator.clipboard.writeText(note.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -153,6 +161,19 @@ function NoteItem({
             >
               {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
+            {note.content && (
+              <button
+                onClick={handleCopy}
+                className={`rounded p-1 transition-colors ${
+                  copied
+                    ? "text-green-400"
+                    : "text-gray-500 hover:text-teal-300 hover:bg-teal-500/20"
+                }`}
+                title={copied ? "¡Copiado!" : "Copiar contenido"}
+              >
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            )}
             <button
               onClick={handleEditClick}
               className="rounded p-1 text-gray-500 hover:text-blue-300 hover:bg-blue-500/20 transition-colors"
