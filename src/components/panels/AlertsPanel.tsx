@@ -153,18 +153,25 @@ export default function AlertsPanel() {
   const [isLoading,     setIsLoading]     = useState(false)
   const [error,         setError]         = useState<string | null>(null)
   const [filter,        setFilter]        = useState<"all" | "unread">("all")
-  const [markingId,     setMarkingId]     = useState<string | null>(null)
-  const [markingAll,    setMarkingAll]    = useState(false)
+  const [markingId,      setMarkingId]      = useState<string | null>(null)
+  const [markingAll,     setMarkingAll]     = useState(false)
+  const [activeCategory, setActiveCategory] = useState<NotificationCategory | null>(null)
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
     [notifications],
   )
 
-  const filtered = useMemo(
-    () => filter === "unread" ? notifications.filter((n) => !n.read) : notifications,
-    [notifications, filter],
+  const presentCategories = useMemo(
+    () => [...new Set(notifications.map((n) => n.category))] as NotificationCategory[],
+    [notifications],
   )
+
+  const filtered = useMemo(() => {
+    let list = filter === "unread" ? notifications.filter((n) => !n.read) : notifications
+    if (activeCategory) list = list.filter((n) => n.category === activeCategory)
+    return list
+  }, [notifications, filter, activeCategory])
 
   // Sync unread count to global store → drives badge in IconStrip
   useEffect(() => {
@@ -193,6 +200,7 @@ export default function AlertsPanel() {
       setNotifications([])
       setError(null)
       setUnreadCount(0)
+      setActiveCategory(null)
       return
     }
     fetchNotifications()
@@ -276,28 +284,47 @@ export default function AlertsPanel() {
 
         {/* Filter pills */}
         {!isLoading && !error && notifications.length > 0 && (
-          <div className="flex gap-1.5 mt-2.5">
-            <button
-              onClick={() => setFilter("all")}
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                filter === "all"
-                  ? "bg-white/15 text-gray-100"
-                  : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
-              }`}
-            >
-              Todas
-            </button>
-            <button
-              onClick={() => setFilter("unread")}
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                filter === "unread"
-                  ? "bg-white/15 text-gray-100"
-                  : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
-              }`}
-            >
-              {unreadCount > 0 ? `Sin leer · ${unreadCount}` : "Sin leer"}
-            </button>
-          </div>
+          <>
+            <div className="flex gap-1.5 mt-2.5">
+              <button
+                onClick={() => setFilter("all")}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  filter === "all"
+                    ? "bg-white/15 text-gray-100"
+                    : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                }`}
+              >
+                Todas
+              </button>
+              <button
+                onClick={() => setFilter("unread")}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  filter === "unread"
+                    ? "bg-white/15 text-gray-100"
+                    : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                }`}
+              >
+                {unreadCount > 0 ? `Sin leer · ${unreadCount}` : "Sin leer"}
+              </button>
+            </div>
+            {presentCategories.length > 1 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {presentCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                      activeCategory === cat
+                        ? CATEGORY_STYLES[cat]
+                        : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                    }`}
+                  >
+                    {CATEGORY_LABELS[cat]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </header>
 
@@ -326,9 +353,13 @@ export default function AlertsPanel() {
       {!isLoading && !error && notifications.length > 0 && filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <BellOff size={28} className="text-gray-500" />
-          <p className="text-sm text-gray-400">Todo al día</p>
+          <p className="text-sm text-gray-400">
+            {activeCategory
+              ? `Sin notificaciones de ${CATEGORY_LABELS[activeCategory]}${filter === "unread" ? " sin leer" : ""}`
+              : "Todo al día"}
+          </p>
           <button
-            onClick={() => setFilter("all")}
+            onClick={() => { setFilter("all"); setActiveCategory(null) }}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Ver todas

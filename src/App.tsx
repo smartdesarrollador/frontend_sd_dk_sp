@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Sidebar from "./components/Sidebar";
+import { useNotificationsPoller } from "./features/notifications/useNotificationsPoller";
+import { useNavigationStore } from "./store/navigationStore";
 import type { PanelId } from "./types";
 
 const ICON_WIDTH = 60;
@@ -9,6 +11,14 @@ const DEFAULT_PANEL_WIDTH = 320;
 function App() {
   const [activePanel, setActivePanel] = useState<PanelId | null>(null);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+
+  useNotificationsPoller(activePanel);
+
+  const pendingPanel = useNavigationStore((s) => s.pendingPanel);
+  const clearPending = useNavigationStore((s) => s.clearPending);
+  useEffect(() => {
+    if (pendingPanel) { handlePanelChange(pendingPanel); clearPending(); }
+  }, [pendingPanel]);
 
   useEffect(() => {
     invoke("register_appbar", { width: ICON_WIDTH }).catch(console.error);

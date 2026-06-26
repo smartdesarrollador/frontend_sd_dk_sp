@@ -170,6 +170,7 @@ pub fn run() {
                 }
             }
         }))
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             app.deep_link().register("rbacdesktop")?;
