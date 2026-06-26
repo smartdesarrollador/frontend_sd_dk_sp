@@ -3,9 +3,10 @@ import {
   Lock, Bookmark, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check,
-  Globe, Tag, ExternalLink,
+  Globe, Tag, ExternalLink, Clipboard,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
+import { apiFetch } from "../../lib/apiFetch"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +41,16 @@ function getDomain(url: string): string {
   }
 }
 
+function getFaviconSrc(bookmark: BookmarkItem): string {
+  if (bookmark.favicon_url) return bookmark.favicon_url
+  try {
+    const { hostname } = new URL(bookmark.url)
+    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
+  } catch {
+    return ""
+  }
+}
+
 function CollectionBadge({ name, color }: { name: string; color: string }) {
   return (
     <span className="flex items-center gap-1 shrink-0">
@@ -53,7 +64,7 @@ function CollectionBadge({ name, color }: { name: string; color: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// BookmarkItem
+// BookmarkItemRow
 // ---------------------------------------------------------------------------
 function BookmarkItemRow({
   bookmark,
@@ -71,7 +82,8 @@ function BookmarkItemRow({
   onDelete: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [faviconError, setFaviconError]   = useState(false)
+  const [faviconSrc]                      = useState(() => getFaviconSrc(bookmark))
+  const [faviconFailed, setFaviconFailed] = useState(!faviconSrc)
 
   const collection = collections.find((c) => c.id === bookmark.collection) ?? null
   const domain     = getDomain(bookmark.url)
@@ -97,12 +109,12 @@ function BookmarkItemRow({
 
         {/* Favicon */}
         <div className="shrink-0 h-5 w-5 flex items-center justify-center">
-          {bookmark.favicon_url && !faviconError ? (
+          {!faviconFailed && faviconSrc ? (
             <img
-              src={bookmark.favicon_url}
+              src={faviconSrc}
               alt=""
               className="h-4 w-4 rounded-sm object-contain"
-              onError={() => setFaviconError(true)}
+              onError={() => setFaviconFailed(true)}
             />
           ) : (
             <Globe size={13} className="text-gray-600" />
@@ -255,20 +267,20 @@ function bookmarkToForm(b: BookmarkItem) {
 function BookmarkForm({
   editBookmark,
   collections,
+  initialUrl,
   onCancel,
   onSaved,
-  accessToken,
-  tenantSlug,
 }: {
   editBookmark: BookmarkItem | null
   collections: BookmarkCollection[]
+  initialUrl?: string
   onCancel: () => void
   onSaved: (bookmark: BookmarkItem, isEdit: boolean) => void
-  accessToken: string
-  tenantSlug: string
 }) {
   const isEdit = editBookmark !== null
-  const [form, setForm]                 = useState(isEdit ? bookmarkToForm(editBookmark!) : EMPTY_FORM)
+  const [form, setForm]                 = useState(
+    isEdit ? bookmarkToForm(editBookmark!) : { ...EMPTY_FORM, url: initialUrl ?? "" }
+  )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError]       = useState<string | null>(null)
 
@@ -283,10 +295,9 @@ function BookmarkForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url     = isEdit
-      ? `${apiBase}/api/v1/app/bookmarks/${editBookmark!.id}/`
-      : `${apiBase}/api/v1/app/bookmarks/`
+    const path = isEdit
+      ? `/api/v1/app/bookmarks/${editBookmark!.id}/`
+      : `/api/v1/app/bookmarks/`
 
     const tags = form.tags
       .split(",")
@@ -294,13 +305,9 @@ function BookmarkForm({
       .filter(Boolean)
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(path, {
         method: isEdit ? "PATCH" : "POST",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-          "Content-Type":  "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url:         form.url.trim(),
           title:       form.title.trim(),
@@ -432,76 +439,50 @@ function BookmarkForm({
 // ---------------------------------------------------------------------------
 export default function BookmarksPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const accessToken     = useAuthStore((s) => s.accessToken)
-  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
-  const [bookmarks, setBookmarks]   = useState<BookmarkItem[]>([])
+  const [bookmarks, setBookmarks]     = useState<BookmarkItem[]>([])
   const [collections, setCollections] = useState<BookmarkCollection[]>([])
-  const [isLoading, setIsLoading]   = useState(false)
-  const [error, setError]           = useState<string | null>(null)
-  const [search, setSearch]         = useState("")
+  const [isLoading, setIsLoading]     = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+  const [search, setSearch]           = useState("")
   const [activeCollection, setActiveCollection] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId]   = useState<string | null>(null)
   // undefined = closed | null = new | BookmarkItem = edit
-  const [formTarget, setFormTarget] = useState<BookmarkItem | null | undefined>(undefined)
+  const [formTarget, setFormTarget]   = useState<BookmarkItem | null | undefined>(undefined)
+  const [clipboardUrl, setClipboardUrl]       = useState<string | null>(null)
+  const [pasteInitialUrl, setPasteInitialUrl] = useState<string>("")
 
   const showForm = formTarget !== undefined
-  const apiBase  = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
 
   const fetchCollections = useCallback(async () => {
-    if (!accessToken || !tenantSlug) return
+    if (!isAuthenticated) return
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/bookmarks/collections/`, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch("/api/v1/app/bookmarks/collections/")
       if (!res.ok) return
       const data = await res.json()
       setCollections(data.collections ?? data.results ?? [])
     } catch {
       // silent — collections are optional UI enhancement
     }
-  }, [accessToken, tenantSlug, apiBase])
+  }, [isAuthenticated])
 
   const fetchBookmarks = useCallback(async () => {
-    if (!accessToken || !tenantSlug) {
-      console.warn("[BookmarksPanel] fetchBookmarks called without accessToken or tenantSlug")
-      return
-    }
+    if (!isAuthenticated) return
     setIsLoading(true)
     setError(null)
-
-    console.log("[BookmarksPanel] fetching →", `${apiBase}/api/v1/app/bookmarks/`)
-
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/bookmarks/`, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      console.log("[BookmarksPanel] response status:", res.status, res.statusText)
-
+      const res = await apiFetch("/api/v1/app/bookmarks/")
       if (!res.ok) {
-        const body = await res.text().catch(() => "(sin body)")
-        console.error("[BookmarksPanel] HTTP error body:", body)
         throw new Error(`HTTP ${res.status} ${res.statusText}`)
       }
-
       const data = await res.json()
-      const list: BookmarkItem[] = data.bookmarks ?? data.results ?? []
-      console.log("[BookmarksPanel] bookmarks count:", list.length)
-      setBookmarks(list)
+      setBookmarks(data.bookmarks ?? data.results ?? [])
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al cargar bookmarks"
-      console.error("[BookmarksPanel] fetch error:", err)
-      setError(msg)
+      setError(err instanceof Error ? err.message : "Error al cargar bookmarks")
     } finally {
       setIsLoading(false)
     }
-  }, [accessToken, tenantSlug, apiBase])
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -512,8 +493,20 @@ export default function BookmarksPanel() {
       setCollections([])
       setError(null)
       setFormTarget(undefined)
+      setClipboardUrl(null)
     }
   }, [isAuthenticated, fetchCollections, fetchBookmarks])
+
+  // Detect URL in clipboard and offer quick-add button
+  useEffect(() => {
+    if (!isAuthenticated) return
+    navigator.clipboard.readText()
+      .then((text) => {
+        const t = text.trim()
+        if (/^https?:\/\/.+/.test(t)) setClipboardUrl(t)
+      })
+      .catch(() => {})
+  }, [isAuthenticated])
 
   function handleSaved(bookmark: BookmarkItem, isEdit: boolean) {
     if (isEdit) {
@@ -525,15 +518,8 @@ export default function BookmarksPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!accessToken || !tenantSlug) return
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/bookmarks/${id}/`, {
-        method: "DELETE",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch(`/api/v1/app/bookmarks/${id}/`, { method: "DELETE" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setBookmarks((prev) => prev.filter((b) => b.id !== id))
       if (expandedId === id) setExpandedId(null)
@@ -594,6 +580,21 @@ export default function BookmarksPanel() {
             {!isLoading && !error && bookmarks.length > 0 && (
               <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
             )}
+            {/* Clipboard paste button */}
+            {clipboardUrl && !showForm && (
+              <button
+                onClick={() => {
+                  setPasteInitialUrl(clipboardUrl)
+                  setClipboardUrl(null)
+                  setFormTarget(null)
+                }}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
+                title={clipboardUrl}
+              >
+                <Clipboard size={11} />
+                Pegar URL
+              </button>
+            )}
             <button
               onClick={toggleFormOrClose}
               className={`rounded p-1 transition-colors ${
@@ -618,14 +619,13 @@ export default function BookmarksPanel() {
       </header>
 
       {/* Create / Edit form */}
-      {showForm && accessToken && tenantSlug && (
+      {showForm && (
         <BookmarkForm
           editBookmark={formTarget ?? null}
           collections={collections}
-          accessToken={accessToken}
-          tenantSlug={tenantSlug}
-          onCancel={() => setFormTarget(undefined)}
-          onSaved={handleSaved}
+          initialUrl={pasteInitialUrl}
+          onCancel={() => { setFormTarget(undefined); setPasteInitialUrl("") }}
+          onSaved={(bm, isEdit) => { handleSaved(bm, isEdit); setPasteInitialUrl("") }}
         />
       )}
 
@@ -681,9 +681,6 @@ export default function BookmarksPanel() {
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <AlertCircle size={28} className="text-red-400" />
           <p className="text-sm text-gray-400">{error}</p>
-          <p className="text-[10px] text-gray-600 font-mono break-all">
-            {apiBase}/api/v1/app/bookmarks/
-          </p>
           <button
             onClick={fetchBookmarks}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
