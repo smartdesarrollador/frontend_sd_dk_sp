@@ -5,6 +5,7 @@ import {
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { useNotificationsStore } from "../../store/notificationsStore"
+import { useSettingsStore } from "../../store/settingsStore"
 import { apiFetch } from "../../lib/apiFetch"
 
 // ---------------------------------------------------------------------------
@@ -148,6 +149,7 @@ function AlertsSkeleton() {
 export default function AlertsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const setUnreadCount  = useNotificationsStore((s) => s.setUnreadCount)
+  const refreshInterval = useSettingsStore((s) => s.refreshInterval)
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoading,     setIsLoading]     = useState(false)
@@ -204,9 +206,10 @@ export default function AlertsPanel() {
       return
     }
     fetchNotifications()
-    const id = setInterval(fetchNotifications, 60_000)
+    if (refreshInterval === 0) return
+    const id = setInterval(fetchNotifications, refreshInterval * 1_000)
     return () => clearInterval(id)
-  }, [isAuthenticated, fetchNotifications, setUnreadCount])
+  }, [isAuthenticated, fetchNotifications, setUnreadCount, refreshInterval])
 
   async function handleMarkRead(id: string) {
     setMarkingId(id)

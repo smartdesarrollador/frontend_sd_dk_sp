@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSettingsStore } from "../../store/settingsStore";
 import type { PanelId } from "../../types";
 import HomePanel from "./HomePanel";
 import FilesPanel from "./FilesPanel";
@@ -33,6 +34,15 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 
+const BG_CLASSES: Record<string, string> = {
+  "default":          "bg-[#13131f]",
+  "dark-blue":        "bg-[#0d1117]",
+  "darker":           "bg-[#080810]",
+  "gradient-purple":  "bg-gradient-to-b from-[#1a0a2e] to-[#13131f]",
+  "gradient-blue":    "bg-gradient-to-b from-[#0a1628] to-[#13131f]",
+  "gradient-teal":    "bg-gradient-to-b from-[#0a1a1a] to-[#13131f]",
+};
+
 interface PanelContainerProps {
   activePanel: PanelId | null;
   panelWidth: number;
@@ -46,6 +56,14 @@ export default function PanelContainer({
 }: PanelContainerProps) {
   const [localWidth, setLocalWidth] = useState(panelWidth);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Sync when Settings slider changes the prop (but not during manual drag)
+  useEffect(() => {
+    if (!isDragging) setLocalWidth(panelWidth);
+  }, [panelWidth, isDragging]);
+
+  const panelBackground = useSettingsStore((s) => s.panelBackground);
+  const bgClass = BG_CLASSES[panelBackground] ?? BG_CLASSES.default;
 
   const ActivePanel = activePanel ? PANEL_MAP[activePanel] : null;
 
@@ -81,7 +99,7 @@ export default function PanelContainer({
 
   return (
     <div
-      className={`relative h-full overflow-hidden bg-[#13131f] ${
+      className={`relative h-full overflow-hidden ${bgClass} ${
         !isDragging ? "transition-[width] duration-200" : ""
       }`}
       style={{ width: activePanel ? localWidth : 0 }}

@@ -6,10 +6,9 @@ import {
 } from "@tauri-apps/plugin-notification"
 import { useAuthStore } from "../../store/authStore"
 import { useNotificationsStore } from "../../store/notificationsStore"
+import { useSettingsStore } from "../../store/settingsStore"
 import { apiFetch } from "../../lib/apiFetch"
 import type { PanelId } from "../../types"
-
-const POLL_INTERVAL_MS = 60_000
 
 interface RawNotification {
   id: string
@@ -21,6 +20,7 @@ interface RawNotification {
 export function useNotificationsPoller(activePanel: PanelId | null) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const setUnreadCount  = useNotificationsStore((s) => s.setUnreadCount)
+  const refreshInterval = useSettingsStore((s) => s.refreshInterval)
   const knownIds        = useRef<Set<string>>(new Set())
   const activePanelRef  = useRef<PanelId | null>(activePanel)
 
@@ -73,7 +73,8 @@ export function useNotificationsPoller(activePanel: PanelId | null) {
     }
 
     poll()
-    const id = setInterval(poll, POLL_INTERVAL_MS)
+    if (refreshInterval === 0) return
+    const id = setInterval(poll, refreshInterval * 1_000)
     return () => clearInterval(id)
-  }, [isAuthenticated, setUnreadCount])
+  }, [isAuthenticated, setUnreadCount, refreshInterval])
 }
