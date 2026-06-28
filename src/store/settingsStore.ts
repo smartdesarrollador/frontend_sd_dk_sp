@@ -3,7 +3,7 @@ import type { PanelId } from '../types'
 
 export const DEFAULT_SIDEBAR_ORDER: PanelId[] = [
   "home", "files", "chat", "alerts", "snippets", "tasks",
-  "notes", "contacts", "bookmarks", "projects", "calendar", "profile",
+  "notes", "contacts", "bookmarks", "projects", "calendar", "vault", "profile",
 ]
 
 interface SettingsData {
@@ -38,7 +38,18 @@ const DEFAULTS: SettingsData = {
 function load(): SettingsData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<SettingsData>) }
+    if (raw) {
+      const merged: SettingsData = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<SettingsData>) }
+      // Insert any panels added to DEFAULT_SIDEBAR_ORDER after the settings were last saved
+      const missing = DEFAULT_SIDEBAR_ORDER.filter((p) => !merged.sidebarOrder.includes(p))
+      if (missing.length > 0) {
+        const profileIdx = merged.sidebarOrder.indexOf('profile')
+        merged.sidebarOrder = profileIdx !== -1
+          ? [...merged.sidebarOrder.slice(0, profileIdx), ...missing, ...merged.sidebarOrder.slice(profileIdx)]
+          : [...merged.sidebarOrder, ...missing]
+      }
+      return merged
+    }
   } catch { /* ignore */ }
   return { ...DEFAULTS }
 }

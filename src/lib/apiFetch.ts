@@ -1,4 +1,5 @@
 import { useAuthStore } from '../store/authStore'
+import { useVaultStore } from '../store/vaultStore'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://rbac.local.test'
 
@@ -31,10 +32,14 @@ async function refreshAccessToken(): Promise<string> {
   return data.access_token
 }
 
-function buildHeaders(init: RequestInit, token: string | null, tenantSlug: string | undefined): Headers {
+function buildHeaders(init: RequestInit, token: string | null, tenantSlug: string | undefined, path: string): Headers {
   const headers = new Headers(init.headers as HeadersInit | undefined)
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (tenantSlug) headers.set('X-Tenant-Slug', tenantSlug)
+  if (path.includes('/vault/')) {
+    const { unlockToken, isUnlocked } = useVaultStore.getState()
+    if (isUnlocked() && unlockToken) headers.set('X-Vault-Token', unlockToken)
+  }
   return headers
 }
 
@@ -42,7 +47,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const state = useAuthStore.getState()
   const tenantSlug = state.tenant?.slug
 
-  const headers = buildHeaders(init, state.accessToken, tenantSlug)
+  const headers = buildHeaders(init, state.accessToken, tenantSlug, path)
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
 
   if (res.status !== 401) return res
@@ -52,7 +57,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     const newToken = await new Promise<string>((resolve, reject) => {
       failedQueue.push({ resolve, reject })
     })
-    const retryHeaders = buildHeaders(init, newToken, tenantSlug)
+    const retryHeaders = buildHeaders(init, newToken, tenantSlug, path)
     return fetch(`${API_BASE}${path}`, { ...init, headers: retryHeaders })
   }
 
@@ -60,7 +65,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   try {
     const newToken = await refreshAccessToken()
     processQueue(null, newToken)
-    const retryHeaders = buildHeaders(init, newToken, tenantSlug)
+    const retryHeaders = buildHeaders(init, newToken, tenantSlug, path)
     return fetch(`${API_BASE}${path}`, { ...init, headers: retryHeaders })
   } catch (err) {
     processQueue(err, null)

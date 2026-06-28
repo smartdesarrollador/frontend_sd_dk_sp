@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import {
   Home, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
-  Settings, X,
+  Settings, X, ShieldCheck,
 } from "lucide-react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import type { PanelId, NavItem } from "../types"
@@ -22,6 +22,7 @@ const ALL_NAV_META: Partial<Record<PanelId, NavItem>> = {
   bookmarks: { id: "bookmarks", icon: Bookmark,      label: "Bookmarks" },
   projects:  { id: "projects",  icon: FolderKanban,  label: "Projects"  },
   calendar:  { id: "calendar",  icon: CalendarDays,  label: "Calendar"  },
+  vault:     { id: "vault",     icon: ShieldCheck,   label: "Vault"     },
   profile:   { id: "profile",   icon: User,          label: "Profile"   },
 }
 

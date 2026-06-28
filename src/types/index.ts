@@ -11,7 +11,8 @@ export type PanelId =
   | "projects"
   | "calendar"
   | "profile"
-  | "settings";
+  | "settings"
+  | "vault";
 
 import type { LucideIcon } from "lucide-react";
 

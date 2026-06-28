@@ -14,6 +14,7 @@ import ProjectsPanel from "./ProjectsPanel";
 import CalendarPanel from "./CalendarPanel";
 import ProfilePanel from "./ProfilePanel";
 import SettingsPanel from "./SettingsPanel";
+import VaultPanel from "./VaultPanel";
 
 const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   home: HomePanel,
@@ -29,6 +30,7 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   calendar:  CalendarPanel,
   profile:   ProfilePanel,
   settings: SettingsPanel,
+  vault:    VaultPanel,
 };
 
 const MIN_WIDTH = 200;
