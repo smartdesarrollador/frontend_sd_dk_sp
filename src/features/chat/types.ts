@@ -120,3 +120,17 @@ export interface ConnectionsResponse {
 }
 
 export type ConnectionAction = 'accept' | 'reject' | 'block'
+
+export interface ChatMessageSearchResult {
+  message_id: string
+  conversation_id: string
+  conversation_name: string
+  snippet: string
+  sender_name: string
+  created_at: string
+}
+
+export interface ChatSearchResponse {
+  query: string
+  messages: ChatMessageSearchResult[]
+}

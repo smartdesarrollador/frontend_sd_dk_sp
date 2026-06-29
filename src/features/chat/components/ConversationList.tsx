@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Bookmark, Plus, Search, MessageSquare, Users2 } from 'lucide-react'
 import { ConversationItem } from './ConversationItem'
+import { MessageSearchResult } from './MessageSearchResult'
+import { useDebouncedValue } from '../../search/hooks/useDebouncedValue'
+import { useChatSearch, CHAT_SEARCH_MIN_LEN } from '../hooks/useChatSearch'
 import type { Conversation } from '../types'
 
 interface ConversationListProps {
@@ -24,14 +27,24 @@ export function ConversationList({
 }: ConversationListProps) {
   const [search, setSearch] = useState('')
 
+  const debouncedSearch = useDebouncedValue(search, 300)
+  const isSearching = search.trim().length >= CHAT_SEARCH_MIN_LEN
+
+  const { data: searchData, isFetching: searchLoading } = useChatSearch(debouncedSearch)
+  const messageResults = searchData?.messages ?? []
+
   const selfConversation = conversations.find((c) => c.type === 'self') ?? null
   const selfActive = Boolean(selfConversation && selfConversation.id === activeId)
 
+  const term = search.toLowerCase()
   const filtered = conversations.filter(
     (c) =>
       c.type !== 'self' &&
-      c.display_name.toLowerCase().includes(search.toLowerCase()),
+      c.display_name.toLowerCase().includes(term),
   )
+
+  const noResults =
+    isSearching && !searchLoading && filtered.length === 0 && messageResults.length === 0
 
   return (
     <div className="flex flex-col h-full">
@@ -66,8 +79,8 @@ export function ConversationList({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar conversación"
-            aria-label="Buscar conversación"
+            placeholder="Buscar chats o mensajes"
+            aria-label="Buscar chats o mensajes"
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-white/5 border border-white/10 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:bg-white/8"
           />
         </div>
@@ -75,55 +88,111 @@ export function ConversationList({
 
       {/* List */}
       <div className="flex-1 overflow-y-auto py-1 space-y-0.5 px-1">
-        {/* Saved messages */}
-        <button
-          type="button"
-          onClick={onOpenSelfChat}
-          aria-label="Mensajes guardados"
-          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors ${
-            selfActive ? 'bg-white/10' : 'hover:bg-white/5'
-          }`}
-        >
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white flex-shrink-0" aria-hidden="true">
-            <Bookmark className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-200 truncate">Mensajes guardados</p>
-            <p className="text-[11px] text-gray-500 truncate">Guarda mensajes para ti</p>
-          </div>
-        </button>
+        {isSearching ? (
+          <>
+            {/* Chats — name matches */}
+            {filtered.length > 0 && (
+              <>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Chats
+                </p>
+                {filtered.map((conversation) => (
+                  <ConversationItem
+                    key={conversation.id}
+                    conversation={conversation}
+                    isActive={conversation.id === activeId}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </>
+            )}
 
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-2.5 px-3 py-2.5 animate-pulse">
-              <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0" />
-              <div className="flex-1 space-y-1.5">
-                <div className="h-2.5 w-2/3 bg-white/10 rounded" />
-                <div className="h-2 w-1/2 bg-white/10 rounded" />
+            {/* Mensajes — content matches del servidor */}
+            {messageResults.length > 0 && (
+              <>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Mensajes
+                </p>
+                {messageResults.map((result) => (
+                  <MessageSearchResult
+                    key={result.message_id}
+                    result={result}
+                    query={debouncedSearch}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </>
+            )}
+
+            {/* Loading mientras busca en el servidor */}
+            {searchLoading && messageResults.length === 0 && (
+              <p className="text-[11px] text-gray-600 text-center py-4">Buscando…</p>
+            )}
+
+            {/* Sin resultados */}
+            {noResults && (
+              <div className="flex flex-col items-center justify-center text-center py-8 px-3 text-gray-600">
+                <MessageSquare className="w-7 h-7 mb-2 opacity-40" />
+                <p className="text-xs">Sin resultados para «{search.trim()}»</p>
               </div>
-            </div>
-          ))
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-center py-8 px-3 text-gray-500">
-            <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
-            <p className="text-xs">No hay conversaciones</p>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Mensajes guardados (self-chat) */}
             <button
               type="button"
-              onClick={onNewChat}
-              className="mt-1.5 text-xs text-blue-400 hover:text-blue-300"
+              onClick={onOpenSelfChat}
+              aria-label="Mensajes guardados"
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                selfActive ? 'bg-white/10' : 'hover:bg-white/5'
+              }`}
             >
-              Iniciar un chat
+              <div
+                className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white flex-shrink-0"
+                aria-hidden="true"
+              >
+                <Bookmark className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-200 truncate">Mensajes guardados</p>
+                <p className="text-[11px] text-gray-500 truncate">Guarda mensajes para ti</p>
+              </div>
             </button>
-          </div>
-        ) : (
-          filtered.map((conversation) => (
-            <ConversationItem
-              key={conversation.id}
-              conversation={conversation}
-              isActive={conversation.id === activeId}
-              onSelect={onSelect}
-            />
-          ))
+
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2.5 px-3 py-2.5 animate-pulse">
+                  <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-2.5 w-2/3 bg-white/10 rounded" />
+                    <div className="h-2 w-1/2 bg-white/10 rounded" />
+                  </div>
+                </div>
+              ))
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-8 px-3 text-gray-500">
+                <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
+                <p className="text-xs">No hay conversaciones</p>
+                <button
+                  type="button"
+                  onClick={onNewChat}
+                  className="mt-1.5 text-xs text-blue-400 hover:text-blue-300"
+                >
+                  Iniciar un chat
+                </button>
+              </div>
+            ) : (
+              filtered.map((conversation) => (
+                <ConversationItem
+                  key={conversation.id}
+                  conversation={conversation}
+                  isActive={conversation.id === activeId}
+                  onSelect={onSelect}
+                />
+              ))
+            )}
+          </>
         )}
       </div>
     </div>
