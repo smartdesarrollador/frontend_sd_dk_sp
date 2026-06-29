@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { PanelId } from '../types'
 
 export const DEFAULT_SIDEBAR_ORDER: PanelId[] = [
-  "home", "files", "chat", "alerts", "snippets", "tasks",
+  "home", "search", "files", "chat", "alerts", "snippets", "tasks",
   "notes", "contacts", "bookmarks", "projects", "calendar", "vault", "profile",
 ]
 

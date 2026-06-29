@@ -1,5 +1,6 @@
 export type PanelId =
   | "home"
+  | "search"
   | "files"
   | "chat"
   | "alerts"

@@ -15,10 +15,12 @@ import CalendarPanel from "./CalendarPanel";
 import ProfilePanel from "./ProfilePanel";
 import SettingsPanel from "./SettingsPanel";
 import VaultPanel from "./VaultPanel";
+import SearchPanel from "./SearchPanel";
 
 const PANEL_MAP: Record<PanelId, React.ComponentType> = {
-  home: HomePanel,
-  files: FilesPanel,
+  home:   HomePanel,
+  search: SearchPanel,
+  files:  FilesPanel,
   chat: ChatPanel,
   alerts: AlertsPanel,
   snippets: SnippetsPanel,
