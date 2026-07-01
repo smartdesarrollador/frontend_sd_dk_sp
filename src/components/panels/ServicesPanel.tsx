@@ -1,114 +1,83 @@
-import { Globe, TrendingUp, Zap, Palette, BrainCircuit, ExternalLink, Sparkles } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ExternalLink, Sparkles, AlertCircle } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { openExternal } from "../../lib/openExternal"
+import { apiFetch } from "../../lib/apiFetch"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DIGISIDER_URL = "https://digisider.com"
 
-interface ServiceDef {
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface CatalogItem {
   id: string
-  icon: LucideIcon
-  iconColor: string
-  iconBg: string
-  title: string
-  descriptionFree: string
-  descriptionPaid: string
-  url: string
+  name: string
+  short_description: string
+  image_url: string | null
+  icon_color: string
+  badge_text: string
+  link_url: string
 }
 
-const SERVICES: ServiceDef[] = [
-  {
-    id: "web",
-    icon: Globe,
-    iconColor: "text-blue-400",
-    iconBg: "bg-blue-500/10",
-    title: "Páginas Web",
-    descriptionFree:
-      "Obtené una presencia profesional online. Diseño moderno, rápido y pensado para convertir visitas en clientes.",
-    descriptionPaid:
-      "Páginas web profesionales que complementan y potencian los flujos de trabajo de tu organización.",
-    url: "https://digisider.com/paginas-web",
-  },
-  {
-    id: "marketing",
-    icon: TrendingUp,
-    iconColor: "text-green-400",
-    iconBg: "bg-green-500/10",
-    title: "Marketing Digital",
-    descriptionFree:
-      "Hacé crecer tu negocio con estrategias de marketing digital que generan resultados reales y medibles.",
-    descriptionPaid:
-      "Estrategias de marketing que amplían el alcance de tu organización y generan nuevas oportunidades.",
-    url: "https://digisider.com/marketing-digital",
-  },
-  {
-    id: "automatizaciones",
-    icon: Zap,
-    iconColor: "text-amber-400",
-    iconBg: "bg-amber-500/10",
-    title: "Automatizaciones",
-    descriptionFree:
-      "Automatizá tareas repetitivas y liberá tiempo para lo que realmente importa en tu negocio.",
-    descriptionPaid:
-      "Integrá automatizaciones que potencian tu eficiencia y se conectan con tus procesos existentes.",
-    url: "https://digisider.com/automatizaciones",
-  },
-  {
-    id: "digital-design",
-    icon: Palette,
-    iconColor: "text-pink-400",
-    iconBg: "bg-pink-500/10",
-    title: "Diseño Digital",
-    descriptionFree:
-      "Identidad visual, branding y diseño gráfico que hacen destacar tu negocio frente a la competencia.",
-    descriptionPaid:
-      "Diseño gráfico y branding profesional para potenciar la imagen visual de tu organización.",
-    url: "https://digisider.com/digital-design",
-  },
-  {
-    id: "ia",
-    icon: BrainCircuit,
-    iconColor: "text-violet-400",
-    iconBg: "bg-violet-500/10",
-    title: "Inteligencia Artificial",
-    descriptionFree:
-      "Aprendé a integrar IA en tu negocio y tomá ventaja de las herramientas más poderosas del momento.",
-    descriptionPaid:
-      "Incorporá soluciones de IA que automatizan procesos y generan valor real en tu organización.",
-    url: "https://digisider.com/aprende-inteligencia-artificial",
-  },
-]
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+function useCatalogItems() {
+  const [items, setItems] = useState<CatalogItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function openUrl(url: string) {
-  openExternal(url)
+  useEffect(() => {
+    apiFetch("/api/v1/public/catalog/?app=desktop")
+      .then((res) => {
+        if (!res.ok) throw new Error()
+        return res.json() as Promise<CatalogItem[]>
+      })
+      .then(setItems)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return { items, loading, error }
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function ServiceCard({ service, isPaidPlan }: { service: ServiceDef; isPaidPlan: boolean }) {
-  const Icon = service.icon
-  const description = isPaidPlan ? service.descriptionPaid : service.descriptionFree
+function ServiceCard({ item, isPaidPlan }: { item: CatalogItem; isPaidPlan: boolean }) {
   const ctaLabel = isPaidPlan ? "Más información" : "Quiero esto"
 
   return (
     <div className="rounded-xl bg-white/5 p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3">
-        <div className={`shrink-0 rounded-lg p-2 ${service.iconBg}`}>
-          <Icon size={18} className={service.iconColor} />
-        </div>
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.name}
+            className="shrink-0 w-10 h-10 rounded-lg object-cover"
+          />
+        ) : (
+          <div
+            className="shrink-0 w-10 h-10 rounded-lg"
+            style={{ backgroundColor: item.icon_color || "#6366f1" }}
+          />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-100">{service.title}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{description}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-sm font-semibold text-gray-100">{item.name}</p>
+            {item.badge_text && (
+              <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-amber-500/20 text-amber-400 rounded">
+                {item.badge_text}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{item.short_description}</p>
         </div>
       </div>
-      <button
-        onClick={() => openUrl(service.url)}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-[11px] font-medium text-gray-300 transition-colors hover:bg-white/10 hover:border-white/20 hover:text-white"
-      >
-        {ctaLabel}
-        <ExternalLink size={11} />
-      </button>
+      {item.link_url && (
+        <button
+          onClick={() => openExternal(item.link_url)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-[11px] font-medium text-gray-300 transition-colors hover:bg-white/10 hover:border-white/20 hover:text-white"
+        >
+          {ctaLabel}
+          <ExternalLink size={11} />
+        </button>
+      )}
     </div>
   )
 }
@@ -118,6 +87,7 @@ export default function ServicesPanel() {
   const tenant = useAuthStore((s) => s.tenant)
   const plan = tenant?.plan ?? "free"
   const isPaidPlan = plan !== "free"
+  const { items, loading, error } = useCatalogItems()
 
   return (
     <div className="flex h-full flex-col">
@@ -148,16 +118,50 @@ export default function ServicesPanel() {
           </div>
         )}
 
-        {/* Cards de servicios */}
-        {SERVICES.map((service) => (
-          <ServiceCard key={service.id} service={service} isPaidPlan={isPaidPlan} />
+        {/* Skeleton */}
+        {loading && (
+          <>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="rounded-xl bg-white/5 p-4 animate-pulse flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-white/10 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 w-28 bg-white/10 rounded" />
+                    <div className="h-2.5 w-full bg-white/5 rounded" />
+                    <div className="h-2.5 w-3/4 bg-white/5 rounded" />
+                  </div>
+                </div>
+                <div className="h-8 w-full bg-white/5 rounded-lg" />
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Error */}
+        {!loading && error && (
+          <div className="flex flex-col items-center justify-center py-10 text-white/40">
+            <AlertCircle size={28} className="mb-2 opacity-50" />
+            <p className="text-xs">No se pudieron cargar los servicios</p>
+          </div>
+        )}
+
+        {/* Empty */}
+        {!loading && !error && items.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-10 text-white/40">
+            <p className="text-xs">Sin servicios disponibles</p>
+          </div>
+        )}
+
+        {/* Cards dinámicas */}
+        {!loading && !error && items.map((item) => (
+          <ServiceCard key={item.id} item={item} isPaidPlan={isPaidPlan} />
         ))}
 
         {/* Footer link */}
         <div className="mt-1 flex flex-col items-center gap-1.5 pb-1">
           <p className="text-[10px] text-gray-700">¿Querés saber más?</p>
           <button
-            onClick={() => openUrl(DIGISIDER_URL)}
+            onClick={() => openExternal(DIGISIDER_URL)}
             className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] text-gray-600 transition-colors hover:bg-white/5 hover:text-gray-400"
           >
             <ExternalLink size={11} />
