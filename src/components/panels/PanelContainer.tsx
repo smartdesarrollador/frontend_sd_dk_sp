@@ -16,6 +16,7 @@ import ProfilePanel from "./ProfilePanel";
 import SettingsPanel from "./SettingsPanel";
 import VaultPanel from "./VaultPanel";
 import SearchPanel from "./SearchPanel";
+import ServicesPanel from "./ServicesPanel";
 
 const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   home:   HomePanel,
@@ -33,6 +34,7 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
   profile:   ProfilePanel,
   settings: SettingsPanel,
   vault:    VaultPanel,
+  services: ServicesPanel,
 };
 
 const MIN_WIDTH = 200;

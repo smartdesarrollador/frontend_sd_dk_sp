@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Lock, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays,
-  User, Settings, Pencil, X, ChevronRight,
+  User, Settings, Pencil, X, ChevronRight, ExternalLink, Sparkles,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { useNotificationsStore } from "../../store/notificationsStore"
 import { useNavigationStore } from "../../store/navigationStore"
 import { apiFetch } from "../../lib/apiFetch"
+import { openExternal } from "../../lib/openExternal"
 import type { PanelId } from "../../types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ const PANEL_META: Partial<Record<PanelId, { label: string; icon: LucideIcon }>> 
   bookmarks: { label: "Bookmarks",  icon: Bookmark },
   projects:  { label: "Proyectos",  icon: FolderKanban },
   calendar:  { label: "Calendario", icon: CalendarDays },
+  services:  { label: "Servicios",   icon: Sparkles },
   profile:   { label: "Perfil",     icon: User },
   settings:  { label: "Settings",   icon: Settings },
 }
@@ -252,8 +254,9 @@ export default function HomePanel() {
     )
   }
 
-  const planStyle = PLAN_STYLES[tenant?.plan ?? ""] ?? PLAN_STYLES.free
-  const planLabel = PLAN_LABELS[tenant?.plan ?? ""] ?? "Free"
+  const planStyle  = PLAN_STYLES[tenant?.plan ?? ""] ?? PLAN_STYLES.free
+  const planLabel  = PLAN_LABELS[tenant?.plan ?? ""] ?? "Free"
+  const isPaidPlan = (tenant?.plan ?? "free") !== "free"
   const firstName  = user?.name?.split(" ")[0] ?? ""
 
   return (
@@ -278,6 +281,13 @@ export default function HomePanel() {
           <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${planStyle}`}>
             {planLabel}
           </span>
+          <button
+            onClick={() => openExternal("https://digisider.com")}
+            title="digisider.com"
+            className="shrink-0 rounded p-0.5 text-gray-700 transition-colors hover:text-gray-400 hover:bg-white/10"
+          >
+            <ExternalLink size={11} />
+          </button>
         </div>
 
         {/* ── Resumen del día ── */}
@@ -391,6 +401,27 @@ export default function HomePanel() {
             </div>
           )}
         </section>
+
+        {/* ── Banner Servicios Digitales ── */}
+        <div className="flex items-start gap-3 rounded-lg bg-white/5 px-3 py-3">
+          <Sparkles size={18} className="mt-0.5 shrink-0 text-purple-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-gray-200">
+              {isPaidPlan ? "Servicios Digitales" : "¿Necesitás crecer online?"}
+            </p>
+            <p className="mt-0.5 text-[10px] leading-relaxed text-gray-500">
+              {isPaidPlan
+                ? "Complementá tu plan con páginas web, marketing y automatizaciones."
+                : "Páginas web, marketing digital y automatizaciones para tu negocio."}
+            </p>
+          </div>
+          <button
+            onClick={() => navigateTo("services")}
+            className="mt-0.5 shrink-0 whitespace-nowrap rounded-md border border-purple-500/30 bg-purple-600/20 px-2.5 py-1.5 text-[10px] font-medium text-purple-300 transition-colors hover:bg-purple-600/30 hover:text-purple-200"
+          >
+            Ver servicios
+          </button>
+        </div>
 
         {/* ── Continuá donde lo dejaste ── */}
         {(lastSnippet || lastNote) && (

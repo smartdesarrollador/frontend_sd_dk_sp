@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import {
   Home, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
-  GripVertical, LogOut, Info, Keyboard,
+  GripVertical, LogOut, Info, Keyboard, Sparkles,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { getVersion } from "@tauri-apps/api/app"
@@ -52,6 +52,7 @@ const PANEL_META: Partial<Record<PanelId, { icon: LucideIcon; label: string }>> 
   bookmarks: { icon: Bookmark,      label: "Bookmarks" },
   projects:  { icon: FolderKanban,  label: "Proyectos" },
   calendar:  { icon: CalendarDays,  label: "Calendario"},
+  services:  { icon: Sparkles,      label: "Servicios" },
   profile:   { icon: User,          label: "Perfil"    },
 }
 

@@ -13,7 +13,8 @@ export type PanelId =
   | "calendar"
   | "profile"
   | "settings"
-  | "vault";
+  | "vault"
+  | "services";
 
 import type { LucideIcon } from "lucide-react";
 

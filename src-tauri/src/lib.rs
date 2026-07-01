@@ -107,6 +107,11 @@ fn unregister_appbar(state: State<'_, AppBarMutex>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    opener::open(url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_hub_login(state_nonce: String) -> Result<(), String> {
     let hub_url = env!("HUB_URL");
     let url = format!(
@@ -180,6 +185,7 @@ pub fn run() {
             register_appbar,
             resize_appbar,
             unregister_appbar,
+            open_url,
             open_hub_login,
             poll_deep_link_url,
             store_desktop_auth,

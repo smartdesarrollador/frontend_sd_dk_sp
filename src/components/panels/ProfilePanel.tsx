@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import {
   UserCircle, LogOut, Loader2,
-  CheckCircle2, XCircle, ShieldCheck, Shield, CalendarDays,
+  CheckCircle2, XCircle, ShieldCheck, Shield, CalendarDays, ExternalLink,
 } from 'lucide-react'
 import { useDesktopAuth } from '../../features/auth/useDesktopAuth'
 import { apiFetch } from '../../lib/apiFetch'
+import { openExternal } from '../../lib/openExternal'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -213,6 +214,17 @@ export default function ProfilePanel() {
             </span>
           </div>
           <p className="text-[10px] text-gray-600 font-mono">{displayTenant.slug}</p>
+        </div>
+
+        {/* ── Digisider link ── */}
+        <div className="mx-3 mb-3 flex items-center justify-center">
+          <button
+            onClick={() => openExternal("https://digisider.com")}
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] text-gray-700 transition-colors hover:bg-white/5 hover:text-gray-400"
+          >
+            <ExternalLink size={11} />
+            digisider.com
+          </button>
         </div>
       </div>
 

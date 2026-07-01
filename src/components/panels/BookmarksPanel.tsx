@@ -7,6 +7,7 @@ import {
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
+import { openExternal } from "../../lib/openExternal"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,7 +94,7 @@ function BookmarkItemRow({
 
   function handleOpenUrl(e: React.MouseEvent) {
     stop(e)
-    window.open(bookmark.url, "_blank", "noopener,noreferrer")
+    openExternal(bookmark.url)
   }
 
   async function handleCopyUrl(e: React.MouseEvent) {
@@ -202,16 +203,13 @@ function BookmarkItemRow({
         <div className="px-3 pb-2">
           <div className="rounded bg-black/30 border border-white/10 p-2 space-y-2 text-xs">
             {/* Full URL */}
-            <a
-              href={bookmark.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={stop}
-              className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors truncate"
+            <button
+              onClick={(e) => { stop(e); openExternal(bookmark.url) }}
+              className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors truncate w-full text-left"
             >
               <ExternalLink size={10} className="shrink-0" />
               <span className="truncate">{bookmark.url}</span>
-            </a>
+            </button>
 
             {/* Description */}
             {bookmark.description && (
