@@ -3,7 +3,7 @@ import type { PanelId } from '../types'
 
 export const DEFAULT_SIDEBAR_ORDER: PanelId[] = [
   "home", "search", "files", "chat", "alerts", "snippets", "tasks",
-  "notes", "contacts", "bookmarks", "projects", "calendar", "vault", "services", "profile",
+  "notes", "contacts", "bookmarks", "projects", "calendar", "vault", "tools", "services", "profile",
 ]
 
 interface SettingsData {

@@ -14,6 +14,7 @@ export type PanelId =
   | "profile"
   | "settings"
   | "vault"
+  | "tools"
   | "services";
 
 import type { LucideIcon } from "lucide-react";
