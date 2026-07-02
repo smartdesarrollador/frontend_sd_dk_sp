@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Lock, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays,
-  User, Settings, Pencil, X, ChevronRight, ExternalLink, Sparkles,
+  User, Settings, Pencil, X, ChevronRight, ExternalLink, Sparkles, Megaphone,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
@@ -11,6 +11,7 @@ import { useNavigationStore } from "../../store/navigationStore"
 import { apiFetch } from "../../lib/apiFetch"
 import { openExternal } from "../../lib/openExternal"
 import type { PanelId } from "../../types"
+import { useDesktopAnnouncements, type DesktopAnnouncement } from "../../features/announcements/useDesktopAnnouncement"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface HomeEvent   { id: string; title: string; start_datetime: string }
@@ -162,6 +163,76 @@ function RecentCard({
   )
 }
 
+function AnnouncementCard({
+  announcement,
+  onDismiss,
+}: {
+  announcement: DesktopAnnouncement
+  onDismiss: () => void
+}) {
+  function formatEnd(iso: string) {
+    return new Date(iso).toLocaleDateString("es", { day: "2-digit", month: "short" })
+  }
+  return (
+    <div className="overflow-hidden rounded-lg bg-white/5">
+
+      {/* Imagen full-width con margen */}
+      <div className="px-2 pt-2">
+        {announcement.image_url ? (
+          <img
+            src={announcement.image_url}
+            alt=""
+            className="h-24 w-full rounded-md object-cover"
+          />
+        ) : (
+          <div className="flex h-16 w-full items-center justify-center rounded-md bg-amber-500/15">
+            <Megaphone size={22} className="text-amber-400" />
+          </div>
+        )}
+      </div>
+
+      {/* Texto debajo de la imagen */}
+      <div className="px-3 pb-2.5 pt-2">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs font-semibold leading-tight text-gray-200">{announcement.title}</p>
+          <button
+            onClick={onDismiss}
+            title="Descartar"
+            className="mt-0.5 shrink-0 rounded p-0.5 text-gray-600 transition-colors hover:text-gray-400"
+          >
+            <X size={11} />
+          </button>
+        </div>
+
+        {announcement.message && (
+          <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-gray-400">
+            {announcement.message}
+          </p>
+        )}
+
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          {announcement.ends_at ? (
+            <span className="text-[9px] text-gray-600">
+              Hasta {formatEnd(announcement.ends_at)}
+            </span>
+          ) : (
+            <span />
+          )}
+          {announcement.cta_url && announcement.cta_text && (
+            <button
+              onClick={() => openExternal(announcement.cta_url)}
+              className="flex items-center gap-1 text-[10px] font-medium text-amber-400 transition-colors hover:text-amber-300"
+            >
+              {announcement.cta_text}
+              <ExternalLink size={9} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function HomePanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -178,6 +249,8 @@ export default function HomePanel() {
   const [shortcuts,     setShortcuts]     = useState<PanelId[]>(loadShortcuts)
   const [editShortcuts, setEditShortcuts] = useState(false)
   const [quoteVisible,  setQuoteVisible]  = useState(() => !isTodayDismissed())
+
+  const { announcements, dismiss } = useDesktopAnnouncements()
 
   const todayEvents = useMemo(
     () => homeEvents.filter((e) => isTodayOrTomorrow(e.start_datetime)),
@@ -422,6 +495,20 @@ export default function HomePanel() {
             Ver servicios
           </button>
         </div>
+
+        {/* ── Anuncios ── */}
+        {announcements.length > 0 && (
+          <section>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+              Anuncios
+            </p>
+            <div className="flex flex-col gap-2">
+              {announcements.map((a) => (
+                <AnnouncementCard key={a.id} announcement={a} onDismiss={() => dismiss(a.id)} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Continuá donde lo dejaste ── */}
         {(lastSnippet || lastNote) && (
