@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Eye, EyeOff, Copy, Check, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Copy, Check, Pencil, Trash2, Loader2, Share2 } from 'lucide-react'
 import { useVaultItemMutations } from '../hooks/useVaultItemMutations'
 import ItemTypeBadge from './ItemTypeBadge'
+import { VaultShareBlock } from './VaultShareBlock'
 import { VAULT_TYPES } from '../itemTypes'
 import type { VaultItem, VaultItemRevealed } from '../types'
 
@@ -19,6 +20,7 @@ export default function ItemDetail({ item, onBack, onEdit, onDeleted, refetchIte
   const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const { reveal, remove } = useVaultItemMutations(refetchItems)
 
   useEffect(() => {
@@ -55,6 +57,17 @@ export default function ItemDetail({ item, onBack, onEdit, onDeleted, refetchIte
         </button>
         <p className="flex-1 truncate text-sm font-semibold text-gray-200">{item.title}</p>
         <button
+          onClick={() => setSharing((v) => !v)}
+          className={`rounded p-1 transition-colors ${
+            sharing
+              ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+              : "text-gray-400 hover:bg-white/5 hover:text-indigo-300"
+          }`}
+          title="Compartir"
+        >
+          <Share2 size={14} />
+        </button>
+        <button
           onClick={() => revealed && onEdit(revealed)}
           disabled={!revealed}
           className="rounded p-1 text-gray-400 hover:bg-white/5 hover:text-gray-200 disabled:opacity-40"
@@ -69,6 +82,11 @@ export default function ItemDetail({ item, onBack, onEdit, onDeleted, refetchIte
           {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
         </button>
       </div>
+
+      {/* Share block */}
+      {sharing && (
+        <VaultShareBlock itemId={item.id} itemTitle={item.title} onClose={() => setSharing(false)} />
+      )}
 
       {/* Badge */}
       <div className="border-b border-white/10 px-3 py-2">
