@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Lock, Clipboard, Check, Code2, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
-  Plus, Loader2, Pencil, Trash2,
+  Plus, Loader2, Pencil, Trash2, Share2, CheckSquare,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
+import { ShareBlock } from "../shared/ShareBlock"
+import { BulkSelectBar } from "../shared/BulkSelectBar"
 
 interface Snippet {
   id: string
@@ -13,6 +15,8 @@ interface Snippet {
   code: string
   language: string
   tags: string[]
+  is_shared: boolean
+  shared_by_name: string | null
   created_at: string
 }
 
@@ -52,12 +56,20 @@ function SnippetItem({
   onToggleExpand,
   onEdit,
   onDelete,
+  onShare,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
 }: {
   snippet: Snippet
   isExpanded: boolean
   onToggleExpand: () => void
   onEdit: () => void
   onDelete: () => void
+  onShare: () => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }) {
   const [copied, setCopied]         = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -73,6 +85,11 @@ function SnippetItem({
   function handleEditClick(e: React.MouseEvent) {
     e.stopPropagation()
     onEdit()
+  }
+
+  function handleShareClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    onShare()
   }
 
   function handleDeleteClick(e: React.MouseEvent) {
@@ -92,14 +109,24 @@ function SnippetItem({
   }
 
   return (
-    <div className="rounded-md overflow-hidden">
+    <div className={`rounded-md overflow-hidden ${selected ? "ring-1 ring-blue-500/50 bg-blue-500/5" : ""}`}>
       <div
         className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 cursor-pointer group"
-        onClick={onToggleExpand}
+        onClick={selectionMode ? () => onToggleSelect?.(snippet.id) : onToggleExpand}
       >
-        <span className="shrink-0 text-gray-600 group-hover:text-gray-400 transition-colors">
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
+        {selectionMode ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect?.(snippet.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 h-3 w-3 rounded accent-blue-500"
+          />
+        ) : (
+          <span className="shrink-0 text-gray-600 group-hover:text-gray-400 transition-colors">
+            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        )}
 
         <span
           className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase ${langColor(snippet.language)}`}
@@ -108,14 +135,24 @@ function SnippetItem({
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-gray-100">{snippet.title}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-medium text-gray-100">{snippet.title}</p>
+            {snippet.is_shared && (
+              <span
+                className="shrink-0 inline-flex"
+                title={snippet.shared_by_name ? `Compartido por ${snippet.shared_by_name}` : "Compartido contigo"}
+              >
+                <Share2 size={10} className="text-indigo-400" />
+              </span>
+            )}
+          </div>
           {snippet.description && (
             <p className="truncate text-xs text-gray-400">{snippet.description}</p>
           )}
         </div>
 
         {/* Action buttons — visible on hover */}
-        {confirmDelete ? (
+        {selectionMode ? null : confirmDelete ? (
           /* Inline delete confirmation */
           <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
             <span className="text-[10px] text-red-400 mr-0.5">¿Eliminar?</span>
@@ -146,6 +183,13 @@ function SnippetItem({
               ) : (
                 <Clipboard size={13} />
               )}
+            </button>
+            <button
+              onClick={handleShareClick}
+              className="rounded p-1 text-gray-500 hover:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+              title="Compartir snippet"
+            >
+              <Share2 size={13} />
             </button>
             <button
               onClick={handleEditClick}
@@ -390,6 +434,9 @@ export default function SnippetsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // null = closed, undefined = new, Snippet = edit mode
   const [formTarget, setFormTarget] = useState<Snippet | null | undefined>(undefined)
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
 
   const showForm = formTarget !== undefined
 
@@ -523,6 +570,33 @@ export default function SnippetsPanel() {
     setExpandedId((prev) => (prev === id ? null : id))
   }
 
+  function toggleSelectionMode() {
+    setIsSelecting((prev) => !prev)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelectId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleBulkShare() {
+    const selected = filtered
+      .filter((s) => selectedIds.has(s.id))
+      .map((s) => ({ id: s.id, title: s.title }))
+    setShareResources(selected)
+  }
+
+  function handleCloseShare() {
+    setShareResources(null)
+    setIsSelecting(false)
+    setSelectedIds(new Set())
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -541,6 +615,19 @@ export default function SnippetsPanel() {
           <div className="flex items-center gap-1">
             {!isLoading && !error && (
               <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            )}
+            {!isLoading && !error && snippets.length > 0 && (
+              <button
+                onClick={toggleSelectionMode}
+                className={`rounded p-1 transition-colors ${
+                  isSelecting
+                    ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+                    : "text-gray-500 hover:text-gray-200 hover:bg-white/10"
+                }`}
+                title={isSelecting ? "Salir de selección" : "Seleccionar varios"}
+              >
+                <CheckSquare size={13} />
+              </button>
             )}
             <button
               onClick={toggleFormOrClose}
@@ -564,6 +651,20 @@ export default function SnippetsPanel() {
           </div>
         </div>
       </header>
+
+      {/* Bulk selection bar */}
+      {isSelecting && (
+        <BulkSelectBar
+          count={selectedIds.size}
+          onShare={handleBulkShare}
+          onCancel={toggleSelectionMode}
+        />
+      )}
+
+      {/* Share block (single or bulk) */}
+      {shareResources && (
+        <ShareBlock resourceType="snippet" resources={shareResources} onClose={handleCloseShare} />
+      )}
 
       {/* Create / Edit form */}
       {showForm && accessToken && tenantSlug && (
@@ -666,6 +767,10 @@ export default function SnippetsPanel() {
               onToggleExpand={() => toggleExpand(snippet.id)}
               onEdit={() => openEditForm(snippet)}
               onDelete={() => handleDelete(snippet.id)}
+              onShare={() => setShareResources([{ id: snippet.id, title: snippet.title }])}
+              selectionMode={isSelecting}
+              selected={selectedIds.has(snippet.id)}
+              onToggleSelect={toggleSelectId}
             />
           ))}
         </div>

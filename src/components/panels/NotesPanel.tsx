@@ -3,8 +3,11 @@ import {
   Lock, StickyNote, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check, Pin, PinOff, Copy,
+  Share2, CheckSquare,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
+import { ShareBlock } from "../shared/ShareBlock"
+import { BulkSelectBar } from "../shared/BulkSelectBar"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,6 +22,8 @@ interface Note {
   is_pinned: boolean
   color: string
   tags: string[]
+  is_shared: boolean
+  shared_by_name: string | null
   created_at: string
   updated_at: string
 }
@@ -63,6 +68,10 @@ function NoteItem({
   onEdit,
   onDelete,
   onTogglePin,
+  onShare,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
 }: {
   note: Note
   isExpanded: boolean
@@ -70,6 +79,10 @@ function NoteItem({
   onEdit: () => void
   onDelete: () => void
   onTogglePin: () => void
+  onShare: () => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -91,6 +104,9 @@ function NoteItem({
   function handlePinClick(e: React.MouseEvent) {
     stop(e); onTogglePin()
   }
+  function handleShareClick(e: React.MouseEvent) {
+    stop(e); onShare()
+  }
   async function handleCopy(e: React.MouseEvent) {
     stop(e)
     if (!note.content) return
@@ -100,16 +116,26 @@ function NoteItem({
   }
 
   return (
-    <div className={`rounded-md overflow-hidden ${note.is_pinned ? "bg-white/[0.03]" : ""}`}>
+    <div className={`rounded-md overflow-hidden ${note.is_pinned ? "bg-white/[0.03]" : ""} ${selected ? "ring-1 ring-blue-500/50 bg-blue-500/5" : ""}`}>
       {/* Main row */}
       <div
         className="flex items-start gap-2 px-3 py-2 hover:bg-white/5 cursor-pointer group"
-        onClick={onToggleExpand}
+        onClick={selectionMode ? () => onToggleSelect?.(note.id) : onToggleExpand}
       >
-        {/* Chevron */}
-        <span className="shrink-0 mt-0.5 text-gray-600 group-hover:text-gray-400 transition-colors">
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
+        {/* Chevron / checkbox */}
+        {selectionMode ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect?.(note.id)}
+            onClick={stop}
+            className="shrink-0 mt-0.5 h-3 w-3 rounded accent-blue-500"
+          />
+        ) : (
+          <span className="shrink-0 mt-0.5 text-gray-600 group-hover:text-gray-400 transition-colors">
+            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        )}
 
         {/* Content */}
         <div className="min-w-0 flex-1">
@@ -118,6 +144,14 @@ function NoteItem({
               <Pin size={10} className="shrink-0 text-yellow-400" />
             )}
             <p className="truncate text-sm font-medium text-gray-100">{note.title}</p>
+            {note.is_shared && (
+              <span
+                className="shrink-0 inline-flex"
+                title={note.shared_by_name ? `Compartida por ${note.shared_by_name}` : "Compartida contigo"}
+              >
+                <Share2 size={10} className="text-indigo-400" />
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CATEGORY_STYLES[note.category]}`}>
@@ -130,7 +164,7 @@ function NoteItem({
         </div>
 
         {/* Actions */}
-        {confirmDelete ? (
+        {selectionMode ? null : confirmDelete ? (
           <div className="flex items-center gap-1 shrink-0" onClick={stop}>
             <span className="text-[10px] text-red-400 mr-0.5">¿Eliminar?</span>
             <button
@@ -174,6 +208,13 @@ function NoteItem({
                 {copied ? <Check size={13} /> : <Copy size={13} />}
               </button>
             )}
+            <button
+              onClick={handleShareClick}
+              className="rounded p-1 text-gray-500 hover:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+              title="Compartir nota"
+            >
+              <Share2 size={13} />
+            </button>
             <button
               onClick={handleEditClick}
               className="rounded p-1 text-gray-500 hover:text-blue-300 hover:bg-blue-500/20 transition-colors"
@@ -443,6 +484,9 @@ export default function NotesPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new note | Note = edit mode
   const [formTarget, setFormTarget] = useState<Note | null | undefined>(undefined)
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
 
   const showForm = formTarget !== undefined
 
@@ -587,6 +631,33 @@ export default function NotesPanel() {
     setExpandedId((prev) => (prev === id ? null : id))
   }
 
+  function toggleSelectionMode() {
+    setIsSelecting((prev) => !prev)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelectId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleBulkShare() {
+    const selected = filtered
+      .filter((n) => selectedIds.has(n.id))
+      .map((n) => ({ id: n.id, title: n.title }))
+    setShareResources(selected)
+  }
+
+  function handleCloseShare() {
+    setShareResources(null)
+    setIsSelecting(false)
+    setSelectedIds(new Set())
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -605,6 +676,19 @@ export default function NotesPanel() {
           <div className="flex items-center gap-1">
             {!isLoading && !error && notes.length > 0 && (
               <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            )}
+            {!isLoading && !error && notes.length > 0 && (
+              <button
+                onClick={toggleSelectionMode}
+                className={`rounded p-1 transition-colors ${
+                  isSelecting
+                    ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+                    : "text-gray-500 hover:text-gray-200 hover:bg-white/10"
+                }`}
+                title={isSelecting ? "Salir de selección" : "Seleccionar varias"}
+              >
+                <CheckSquare size={13} />
+              </button>
             )}
             <button
               onClick={toggleFormOrClose}
@@ -636,6 +720,20 @@ export default function NotesPanel() {
           </div>
         )}
       </header>
+
+      {/* Bulk selection bar */}
+      {isSelecting && (
+        <BulkSelectBar
+          count={selectedIds.size}
+          onShare={handleBulkShare}
+          onCancel={toggleSelectionMode}
+        />
+      )}
+
+      {/* Share block (single or bulk) */}
+      {shareResources && (
+        <ShareBlock resourceType="note" resources={shareResources} onClose={handleCloseShare} />
+      )}
 
       {/* Create / Edit form */}
       {showForm && accessToken && tenantSlug && (
@@ -739,6 +837,10 @@ export default function NotesPanel() {
               onEdit={() => openEditForm(note)}
               onDelete={() => handleDelete(note.id)}
               onTogglePin={() => handleTogglePin(note)}
+              onShare={() => setShareResources([{ id: note.id, title: note.title }])}
+              selectionMode={isSelecting}
+              selected={selectedIds.has(note.id)}
+              onToggleSelect={toggleSelectId}
             />
           ))}
         </div>

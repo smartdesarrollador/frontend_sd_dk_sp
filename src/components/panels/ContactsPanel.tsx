@@ -4,9 +4,12 @@ import {
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check, Copy,
   Phone, Building2, Briefcase, FileText, Mail,
+  Share2, CheckSquare,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
+import { ShareBlock } from "../shared/ShareBlock"
+import { BulkSelectBar } from "../shared/BulkSelectBar"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +32,8 @@ interface Contact {
   job_title: string
   notes: string
   group: ContactGroup | null
+  is_shared: boolean
+  shared_by_name: string | null
   created_at: string
   updated_at: string
 }
@@ -77,12 +82,20 @@ function ContactItem({
   onToggleExpand,
   onEdit,
   onDelete,
+  onShare,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
 }: {
   contact: Contact
   isExpanded: boolean
   onToggleExpand: () => void
   onEdit: () => void
   onDelete: () => void
+  onShare: () => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -98,16 +111,26 @@ function ContactItem({
   }
 
   return (
-    <div className="rounded-md overflow-hidden">
+    <div className={`rounded-md overflow-hidden ${selected ? "ring-1 ring-blue-500/50 bg-blue-500/5" : ""}`}>
       {/* Main row */}
       <div
         className="flex items-center gap-2.5 px-3 py-2 hover:bg-white/5 cursor-pointer group"
-        onClick={onToggleExpand}
+        onClick={selectionMode ? () => onToggleSelect?.(contact.id) : onToggleExpand}
       >
-        {/* Chevron */}
-        <span className="shrink-0 text-gray-600 group-hover:text-gray-400 transition-colors">
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
+        {/* Chevron / checkbox */}
+        {selectionMode ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect?.(contact.id)}
+            onClick={stop}
+            className="shrink-0 h-3 w-3 rounded accent-blue-500"
+          />
+        ) : (
+          <span className="shrink-0 text-gray-600 group-hover:text-gray-400 transition-colors">
+            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        )}
 
         {/* Avatar */}
         <div className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${getAvatarColor(contact.name)}`}>
@@ -116,7 +139,17 @@ function ContactItem({
 
         {/* Name + email / group */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-gray-100">{contact.name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-medium text-gray-100">{contact.name}</p>
+            {contact.is_shared && (
+              <span
+                className="shrink-0 inline-flex"
+                title={contact.shared_by_name ? `Compartido por ${contact.shared_by_name}` : "Compartido contigo"}
+              >
+                <Share2 size={10} className="text-indigo-400" />
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 mt-0.5">
             {contact.email ? (
               <p className="truncate text-xs text-gray-500 flex-1">{contact.email}</p>
@@ -128,7 +161,7 @@ function ContactItem({
         </div>
 
         {/* Actions */}
-        {confirmDelete ? (
+        {selectionMode ? null : confirmDelete ? (
           <div className="flex items-center gap-1 shrink-0" onClick={stop}>
             <span className="text-[10px] text-red-400 mr-0.5">¿Eliminar?</span>
             <button
@@ -161,6 +194,13 @@ function ContactItem({
                 {copied ? <Check size={13} /> : <Copy size={13} />}
               </button>
             )}
+            <button
+              onClick={(e) => { stop(e); onShare() }}
+              className="rounded p-1 text-gray-500 hover:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+              title="Compartir contacto"
+            >
+              <Share2 size={13} />
+            </button>
             <button
               onClick={(e) => { stop(e); onEdit() }}
               className="rounded p-1 text-gray-500 hover:text-blue-300 hover:bg-blue-500/20 transition-colors"
@@ -464,6 +504,9 @@ export default function ContactsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new contact | Contact = edit
   const [formTarget, setFormTarget] = useState<Contact | null | undefined>(undefined)
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
 
   const showForm = formTarget !== undefined
 
@@ -566,6 +609,33 @@ export default function ContactsPanel() {
     setExpandedId((prev) => (prev === id ? null : id))
   }
 
+  function toggleSelectionMode() {
+    setIsSelecting((prev) => !prev)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelectId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleBulkShare() {
+    const selected = filtered
+      .filter((c) => selectedIds.has(c.id))
+      .map((c) => ({ id: c.id, title: c.name }))
+    setShareResources(selected)
+  }
+
+  function handleCloseShare() {
+    setShareResources(null)
+    setIsSelecting(false)
+    setSelectedIds(new Set())
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -584,6 +654,19 @@ export default function ContactsPanel() {
           <div className="flex items-center gap-1">
             {!isLoading && !error && contacts.length > 0 && (
               <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            )}
+            {!isLoading && !error && contacts.length > 0 && (
+              <button
+                onClick={toggleSelectionMode}
+                className={`rounded p-1 transition-colors ${
+                  isSelecting
+                    ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+                    : "text-gray-500 hover:text-gray-200 hover:bg-white/10"
+                }`}
+                title={isSelecting ? "Salir de selección" : "Seleccionar varios"}
+              >
+                <CheckSquare size={13} />
+              </button>
             )}
             <button
               onClick={toggleFormOrClose}
@@ -607,6 +690,20 @@ export default function ContactsPanel() {
           </div>
         </div>
       </header>
+
+      {/* Bulk selection bar */}
+      {isSelecting && (
+        <BulkSelectBar
+          count={selectedIds.size}
+          onShare={handleBulkShare}
+          onCancel={toggleSelectionMode}
+        />
+      )}
+
+      {/* Share block (single or bulk) */}
+      {shareResources && (
+        <ShareBlock resourceType="contact" resources={shareResources} onClose={handleCloseShare} />
+      )}
 
       {/* Create / Edit form */}
       {showForm && (
@@ -712,6 +809,10 @@ export default function ContactsPanel() {
               onToggleExpand={() => toggleExpand(contact.id)}
               onEdit={() => { setExpandedId(null); setFormTarget(contact) }}
               onDelete={() => handleDelete(contact.id)}
+              onShare={() => setShareResources([{ id: contact.id, title: contact.name }])}
+              selectionMode={isSelecting}
+              selected={selectedIds.has(contact.id)}
+              onToggleSelect={toggleSelectId}
             />
           ))}
         </div>
