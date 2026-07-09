@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   Lock, Bookmark, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -287,12 +287,14 @@ function BookmarkForm({
   initialUrl,
   onCancel,
   onSaved,
+  tagSuggestions,
 }: {
   editBookmark: BookmarkItem | null
   collections: BookmarkCollection[]
   initialUrl?: string
   onCancel: () => void
   onSaved: (bookmark: BookmarkItem, isEdit: boolean) => void
+  tagSuggestions: string[]
 }) {
   const isEdit = editBookmark !== null
   const [form, setForm]                 = useState(
@@ -300,10 +302,40 @@ function BookmarkForm({
   )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError]       = useState<string | null>(null)
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
+  const tagFieldRef = useRef<HTMLDivElement>(null)
 
   function setField<K extends keyof typeof EMPTY_FORM>(field: K, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
+
+  // Autocomplete: suggestions for the tag segment currently being typed
+  // (text after the last comma), excluding tags already present.
+  const typedTags = form.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+  const currentSegment = form.tags.split(",").pop()?.trim() ?? ""
+  const tagMatches = tagSuggestions.filter((t) => {
+    if (typedTags.includes(t.toLowerCase())) return false
+    if (!currentSegment) return true
+    return t.toLowerCase().includes(currentSegment.toLowerCase())
+  })
+
+  function selectTagSuggestion(tag: string) {
+    const segments = form.tags.split(",").map((s) => s.trim()).filter(Boolean)
+    if (currentSegment) segments.pop()
+    segments.push(tag)
+    setField("tags", segments.join(", ") + ", ")
+    setTagDropdownOpen(false)
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (tagFieldRef.current && !tagFieldRef.current.contains(e.target as Node)) {
+        setTagDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -414,13 +446,35 @@ function BookmarkForm({
       />
 
       {/* Tags */}
-      <input
-        type="text"
-        value={form.tags}
-        onChange={(e) => setField("tags", e.target.value)}
-        placeholder="tag1, tag2 (opcional)"
-        className={inputCls}
-      />
+      <div ref={tagFieldRef} className="relative">
+        <input
+          type="text"
+          value={form.tags}
+          onChange={(e) => setField("tags", e.target.value)}
+          onFocus={() => setTagDropdownOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setTagDropdownOpen(false)
+          }}
+          placeholder="tag1, tag2 (opcional)"
+          className={inputCls}
+          autoComplete="off"
+        />
+        {tagDropdownOpen && tagMatches.length > 0 && (
+          <ul className="absolute z-10 mt-1 w-full max-h-32 overflow-y-auto rounded bg-gray-900 border border-white/10 shadow-lg">
+            {tagMatches.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  onClick={() => selectTagSuggestion(tag)}
+                  className="w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-white/10 transition-colors"
+                >
+                  #{tag}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {formError && (
         <p className="text-xs text-red-400 flex items-center gap-1">
@@ -463,6 +517,7 @@ export default function BookmarksPanel() {
   const [error, setError]             = useState<string | null>(null)
   const [search, setSearch]           = useState("")
   const [activeCollection, setActiveCollection] = useState<string | null>(null)
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   // undefined = closed | null = new | BookmarkItem = edit
   const [formTarget, setFormTarget]   = useState<BookmarkItem | null | undefined>(undefined)
@@ -555,11 +610,22 @@ export default function BookmarksPanel() {
     return collections.filter((c) => ids.has(c.id))
   }, [bookmarks, collections])
 
+  // Distinct tags present in the list (used for both the tag filter and
+  // the tag autocomplete in BookmarkForm — no separate API call needed).
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    bookmarks.forEach((b) => b.tags?.forEach((t) => set.add(t)))
+    return Array.from(set).sort()
+  }, [bookmarks])
+
   // Filtered list
   const filtered = useMemo(() => {
     let list = bookmarks
     if (activeCollection) {
       list = list.filter((b) => b.collection === activeCollection)
+    }
+    if (activeTag) {
+      list = list.filter((b) => b.tags?.includes(activeTag))
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -572,7 +638,7 @@ export default function BookmarksPanel() {
       )
     }
     return list
-  }, [bookmarks, activeCollection, search])
+  }, [bookmarks, activeCollection, activeTag, search])
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -643,6 +709,7 @@ export default function BookmarksPanel() {
           initialUrl={pasteInitialUrl}
           onCancel={() => { setFormTarget(undefined); setPasteInitialUrl("") }}
           onSaved={(bm, isEdit) => { handleSaved(bm, isEdit); setPasteInitialUrl("") }}
+          tagSuggestions={allTags}
         />
       )}
 
@@ -685,6 +752,24 @@ export default function BookmarksPanel() {
                     style={{ backgroundColor: c.color || "#6b7280" }}
                   />
                   {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {allTags.length >= 2 && (
+            <div className="flex flex-wrap gap-1">
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    activeTag === tag
+                      ? "bg-teal-900/50 text-teal-300 ring-1 ring-white/30"
+                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                  }`}
+                >
+                  #{tag}
                 </button>
               ))}
             </div>

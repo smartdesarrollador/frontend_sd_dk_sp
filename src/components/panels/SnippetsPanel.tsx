@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   Lock, Clipboard, Check, Code2, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
-  Plus, Loader2, Pencil, Trash2, Share2, CheckSquare,
+  Plus, Loader2, Pencil, Trash2, Share2, CheckSquare, Tag,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { ShareBlock } from "../shared/ShareBlock"
@@ -209,11 +209,26 @@ function SnippetItem({
         )}
       </div>
 
-      {isExpanded && snippet.code && (
-        <div className="px-3 pb-2">
-          <pre className="max-h-48 overflow-y-auto rounded bg-black/40 border border-white/10 p-2 text-[11px] font-mono text-gray-300 whitespace-pre-wrap break-all">
-            <code>{snippet.code}</code>
-          </pre>
+      {isExpanded && (snippet.code || snippet.tags.length > 0) && (
+        <div className="px-3 pb-2 space-y-1.5">
+          {snippet.code && (
+            <pre className="max-h-48 overflow-y-auto rounded bg-black/40 border border-white/10 p-2 text-[11px] font-mono text-gray-300 whitespace-pre-wrap break-all">
+              <code>{snippet.code}</code>
+            </pre>
+          )}
+          {snippet.tags.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <Tag size={10} className="text-gray-600 shrink-0" />
+              {snippet.tags.map((t) => (
+                <span
+                  key={t}
+                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-gray-400"
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -261,21 +276,53 @@ function SnippetForm({
   onSaved,
   accessToken,
   tenantSlug,
+  tagSuggestions,
 }: {
   editSnippet: Snippet | null
   onCancel: () => void
   onSaved: (snippet: Snippet, isEdit: boolean) => void
   accessToken: string
   tenantSlug: string
+  tagSuggestions: string[]
 }) {
   const isEdit = editSnippet !== null
   const [form, setForm]                 = useState(isEdit ? snippetToForm(editSnippet!) : EMPTY_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError]       = useState<string | null>(null)
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
+  const tagFieldRef = useRef<HTMLDivElement>(null)
 
   function setField(field: keyof typeof EMPTY_FORM, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
+
+  // Autocomplete: suggestions for the tag segment currently being typed
+  // (text after the last comma), excluding tags already present.
+  const typedTags = form.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+  const currentSegment = form.tags.split(",").pop()?.trim() ?? ""
+  const tagMatches = tagSuggestions.filter((t) => {
+    if (typedTags.includes(t.toLowerCase())) return false
+    if (!currentSegment) return true
+    return t.toLowerCase().includes(currentSegment.toLowerCase())
+  })
+
+  function selectTagSuggestion(tag: string) {
+    const segments = form.tags.split(",").map((s) => s.trim()).filter(Boolean)
+    if (currentSegment) segments.pop()
+    segments.push(tag)
+    setField("tags", segments.join(", ") + ", ")
+    setTagDropdownOpen(false)
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (tagFieldRef.current && !tagFieldRef.current.contains(e.target as Node)) {
+        setTagDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -381,13 +428,35 @@ function SnippetForm({
         className={inputCls}
       />
 
-      <input
-        type="text"
-        value={form.tags}
-        onChange={(e) => setField("tags", e.target.value)}
-        placeholder="tag1, tag2 (opcional)"
-        className={inputCls}
-      />
+      <div ref={tagFieldRef} className="relative">
+        <input
+          type="text"
+          value={form.tags}
+          onChange={(e) => setField("tags", e.target.value)}
+          onFocus={() => setTagDropdownOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setTagDropdownOpen(false)
+          }}
+          placeholder="tag1, tag2 (opcional)"
+          className={inputCls}
+          autoComplete="off"
+        />
+        {tagDropdownOpen && tagMatches.length > 0 && (
+          <ul className="absolute z-10 mt-1 w-full max-h-32 overflow-y-auto rounded bg-gray-900 border border-white/10 shadow-lg">
+            {tagMatches.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  onClick={() => selectTagSuggestion(tag)}
+                  className="w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-white/10 transition-colors"
+                >
+                  #{tag}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {formError && (
         <p className="text-xs text-red-400 flex items-center gap-1">
@@ -431,6 +500,7 @@ export default function SnippetsPanel() {
   const [error, setError]           = useState<string | null>(null)
   const [search, setSearch]         = useState("")
   const [activeLang, setActiveLang] = useState<string | null>(null)
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // null = closed, undefined = new, Snippet = edit mode
   const [formTarget, setFormTarget] = useState<Snippet | null | undefined>(undefined)
@@ -547,11 +617,22 @@ export default function SnippetsPanel() {
     return [...new Set(snippets.map((s) => s.language.toLowerCase()))].sort()
   }, [snippets])
 
+  // Distinct tags present in the list (used for both the tag filter and
+  // the tag autocomplete in SnippetForm — no separate API call needed).
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    snippets.forEach((s) => s.tags?.forEach((t) => set.add(t)))
+    return Array.from(set).sort()
+  }, [snippets])
+
   // Filtered list
   const filtered = useMemo(() => {
     let list = snippets
     if (activeLang) {
       list = list.filter((s) => s.language.toLowerCase() === activeLang)
+    }
+    if (activeTag) {
+      list = list.filter((s) => s.tags?.includes(activeTag))
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -564,7 +645,7 @@ export default function SnippetsPanel() {
       )
     }
     return list
-  }, [snippets, activeLang, search])
+  }, [snippets, activeLang, activeTag, search])
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -674,6 +755,7 @@ export default function SnippetsPanel() {
           tenantSlug={tenantSlug}
           onCancel={closeForm}
           onSaved={handleSaved}
+          tagSuggestions={allTags}
         />
       )}
 
@@ -712,6 +794,24 @@ export default function SnippetsPanel() {
                   }`}
                 >
                   {lang}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {allTags.length >= 2 && (
+            <div className="flex flex-wrap gap-1">
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    activeTag === tag
+                      ? "bg-teal-900/50 text-teal-300 ring-1 ring-white/30"
+                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                  }`}
+                >
+                  #{tag}
                 </button>
               ))}
             </div>

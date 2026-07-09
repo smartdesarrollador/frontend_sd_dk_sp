@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   Lock, StickyNote, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -305,21 +305,53 @@ function NoteForm({
   onSaved,
   accessToken,
   tenantSlug,
+  tagSuggestions,
 }: {
   editNote: Note | null
   onCancel: () => void
   onSaved: (note: Note, isEdit: boolean) => void
   accessToken: string
   tenantSlug: string
+  tagSuggestions: string[]
 }) {
   const isEdit = editNote !== null
   const [form, setForm]                 = useState(isEdit ? noteToForm(editNote!) : EMPTY_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError]       = useState<string | null>(null)
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
+  const tagFieldRef = useRef<HTMLDivElement>(null)
 
   function setField<K extends keyof typeof EMPTY_FORM>(field: K, value: typeof EMPTY_FORM[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
+
+  // Autocomplete: suggestions for the tag segment currently being typed
+  // (text after the last comma), excluding tags already present.
+  const typedTags = form.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+  const currentSegment = form.tags.split(",").pop()?.trim() ?? ""
+  const tagMatches = tagSuggestions.filter((t) => {
+    if (typedTags.includes(t.toLowerCase())) return false
+    if (!currentSegment) return true
+    return t.toLowerCase().includes(currentSegment.toLowerCase())
+  })
+
+  function selectTagSuggestion(tag: string) {
+    const segments = form.tags.split(",").map((s) => s.trim()).filter(Boolean)
+    if (currentSegment) segments.pop()
+    segments.push(tag)
+    setField("tags", segments.join(", ") + ", ")
+    setTagDropdownOpen(false)
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (tagFieldRef.current && !tagFieldRef.current.contains(e.target as Node)) {
+        setTagDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -431,13 +463,35 @@ function NoteForm({
       />
 
       {/* Tags */}
-      <input
-        type="text"
-        value={form.tags}
-        onChange={(e) => setField("tags", e.target.value)}
-        placeholder="tag1, tag2 (opcional)"
-        className={inputCls}
-      />
+      <div ref={tagFieldRef} className="relative">
+        <input
+          type="text"
+          value={form.tags}
+          onChange={(e) => setField("tags", e.target.value)}
+          onFocus={() => setTagDropdownOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setTagDropdownOpen(false)
+          }}
+          placeholder="tag1, tag2 (opcional)"
+          className={inputCls}
+          autoComplete="off"
+        />
+        {tagDropdownOpen && tagMatches.length > 0 && (
+          <ul className="absolute z-10 mt-1 w-full max-h-32 overflow-y-auto rounded bg-gray-900 border border-white/10 shadow-lg">
+            {tagMatches.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  onClick={() => selectTagSuggestion(tag)}
+                  className="w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-white/10 transition-colors"
+                >
+                  #{tag}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {formError && (
         <p className="text-xs text-red-400 flex items-center gap-1">
@@ -481,6 +535,7 @@ export default function NotesPanel() {
   const [error, setError]           = useState<string | null>(null)
   const [search, setSearch]         = useState("")
   const [activeCategory, setActiveCategory] = useState<NoteCategory | null>(null)
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new note | Note = edit mode
   const [formTarget, setFormTarget] = useState<Note | null | undefined>(undefined)
@@ -603,11 +658,23 @@ export default function NotesPanel() {
     return CATEGORIES.filter((c) => set.has(c.value))
   }, [notes])
 
+  // Distinct tags present in the list (used for both the tag filter and
+  // the tag autocomplete in NoteForm — no separate API call needed since
+  // all notes are already loaded client-side).
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    notes.forEach((n) => n.tags?.forEach((t) => set.add(t)))
+    return Array.from(set).sort()
+  }, [notes])
+
   // Filtered + sorted list (pinned first)
   const filtered = useMemo(() => {
     let list = notes
     if (activeCategory) {
       list = list.filter((n) => n.category === activeCategory)
+    }
+    if (activeTag) {
+      list = list.filter((n) => n.tags?.includes(activeTag))
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -623,7 +690,7 @@ export default function NotesPanel() {
       if (a.is_pinned === b.is_pinned) return 0
       return a.is_pinned ? -1 : 1
     })
-  }, [notes, activeCategory, search])
+  }, [notes, activeCategory, activeTag, search])
 
   const pinnedCount = useMemo(() => notes.filter((n) => n.is_pinned).length, [notes])
 
@@ -743,6 +810,7 @@ export default function NotesPanel() {
           tenantSlug={tenantSlug}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
+          tagSuggestions={allTags}
         />
       )}
 
@@ -781,6 +849,24 @@ export default function NotesPanel() {
                   }`}
                 >
                   {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {allTags.length >= 2 && (
+            <div className="flex flex-wrap gap-1">
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    activeTag === tag
+                      ? "bg-teal-900/50 text-teal-300 ring-1 ring-white/30"
+                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                  }`}
+                >
+                  #{tag}
                 </button>
               ))}
             </div>
