@@ -1,6 +1,6 @@
 [package]
 name = "tauri-react-3"
-version = "0.1.0"
+version = "0.1.1"
 description = "Windows AppBar Sidebar"
 authors = []
 edition = "2021"
