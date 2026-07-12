@@ -48,6 +48,9 @@ const PLAN_LABELS: Record<string, string> = {
   enterprise:   'Enterprise',
 }
 
+const HUB_URL = import.meta.env.VITE_HUB_URL ?? 'http://hub.local.test'
+const PLAN_ORDER = ['free', 'starter', 'professional', 'enterprise']
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -130,6 +133,7 @@ export default function ProfilePanel() {
   const plan      = displayTenant.plan
   const planStyle = PLAN_STYLES[plan] ?? PLAN_STYLES.free
   const planLabel = PLAN_LABELS[plan] ?? plan
+  const canUpgradePlan = PLAN_ORDER.indexOf(plan) < PLAN_ORDER.length - 1
 
   return (
     <div className="flex h-full flex-col">
@@ -214,6 +218,15 @@ export default function ProfilePanel() {
             </span>
           </div>
           <p className="text-[10px] text-gray-600 font-mono">{displayTenant.slug}</p>
+          {canUpgradePlan && (
+            <button
+              onClick={() => openExternal(`${HUB_URL}/subscription`)}
+              className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <ExternalLink size={11} />
+              Actualizar plan
+            </button>
+          )}
         </div>
 
         {/* ── Digisider link ── */}
