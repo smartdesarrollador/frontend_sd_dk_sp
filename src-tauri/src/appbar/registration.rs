@@ -101,12 +101,6 @@ pub fn reserve_band(hwnd: usize, width: i32) -> RECT {
         data.rc.left = right - width;
         SHAppBarMessage(ABM_SETPOS, &mut data);
 
-        eprintln!(
-            "[appbar-diag] reserve_band: width={width} monitor=({},{})-({},{}) approved=({top},{right},{bottom}) setpos_back=({},{},{},{})",
-            mon.left, mon.top, mon.right, mon.bottom,
-            data.rc.left, data.rc.top, data.rc.right, data.rc.bottom
-        );
-
         RECT {
             left: right - width,
             top,
@@ -152,7 +146,6 @@ pub fn update_appbar_position(hwnd: usize, width: i32) {
 /// with the resize and left the panel window short.
 pub fn reassert_appbar(hwnd: usize, width: i32) {
     unsafe {
-        eprintln!("[appbar-diag] reassert_appbar: width={width}");
         let mut data = make_empty_data(hwnd);
         SHAppBarMessage(ABM_NEW, &mut data);
 

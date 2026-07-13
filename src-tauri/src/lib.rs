@@ -166,7 +166,6 @@ fn register_appbar(
     #[cfg(target_os = "windows")]
     {
         let hwnd = get_hwnd(&window)?;
-        eprintln!("[appbar-diag] register_appbar: width={width} hwnd={hwnd:#x}");
         appbar::subclass::set_current_width(width);
         // Fresh registration: drop any stale shell-side registration first
         // (after resume-from-suspend the shell can carry a ghost band that
@@ -185,7 +184,6 @@ fn register_appbar(
         guard.hwnd = hwnd;
         guard.registered = true;
         guard.current_width = width;
-        eprintln!("[appbar-diag] register_appbar OK (registered=true)");
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -205,16 +203,10 @@ fn resize_appbar(
     {
         let mut guard = state.0.lock().map_err(|e| format!("lock error: {e}"))?;
         if guard.registered && guard.hwnd != 0 {
-            eprintln!("[appbar-diag] resize_appbar: width={width}");
             appbar::subclass::set_current_width(width);
             let rc = appbar::registration::reserve_band(guard.hwnd, width);
             apply_window_rect(&window, &rc)?;
             guard.current_width = width;
-        } else {
-            eprintln!(
-                "[appbar-diag] resize_appbar IGNORED: registered={} hwnd={:#x} (width={width})",
-                guard.registered, guard.hwnd
-            );
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -229,10 +221,6 @@ fn unregister_appbar(state: State<'_, AppBarMutex>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let mut guard = state.0.lock().map_err(|e| format!("lock error: {e}"))?;
-        eprintln!(
-            "[appbar-diag] unregister_appbar command: registered={} hwnd={:#x}",
-            guard.registered, guard.hwnd
-        );
         if guard.registered && guard.hwnd != 0 {
             appbar::registration::unregister_appbar(guard.hwnd);
             guard.registered = false;
@@ -339,7 +327,6 @@ pub fn run() {
                     if let Some(state) = window.try_state::<AppBarMutex>() {
                         if let Ok(mut guard) = state.0.lock() {
                             if guard.registered && guard.hwnd != 0 {
-                                eprintln!("[appbar-diag] window Destroyed → unregister");
                                 appbar::registration::unregister_appbar(guard.hwnd);
                                 guard.registered = false;
                             }
