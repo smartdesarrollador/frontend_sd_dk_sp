@@ -73,7 +73,16 @@ export default function PanelContainer({
   const panelBackground = useSettingsStore((s) => s.panelBackground);
   const bgClass = BG_CLASSES[panelBackground] ?? BG_CLASSES.default;
 
-  const ActivePanel = activePanel ? PANEL_MAP[activePanel] : null;
+  const isNotesActive = activePanel === "notes";
+  const isTasksActive = activePanel === "tasks";
+  const isSnippetsActive = activePanel === "snippets";
+  const OtherActivePanel =
+    activePanel &&
+    activePanel !== "notes" &&
+    activePanel !== "tasks" &&
+    activePanel !== "snippets"
+      ? PANEL_MAP[activePanel]
+      : null;
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -120,8 +129,27 @@ export default function PanelContainer({
         />
       )}
 
-      <div style={{ width: localWidth }} className="h-full">
-        {ActivePanel && <ActivePanel />}
+      <div style={{ width: localWidth }} className="h-full relative">
+        {/* Notas se mantiene siempre montado para no perder el borrador de
+            "Nueva nota" al cambiar de panel y volver */}
+        <div className="absolute inset-0" style={{ display: isNotesActive ? "block" : "none" }}>
+          <NotesPanel />
+        </div>
+        {/* Tareas se mantiene siempre montado para no perder el borrador de
+            "Nueva tarea" al cambiar de panel y volver */}
+        <div className="absolute inset-0" style={{ display: isTasksActive ? "block" : "none" }}>
+          <TasksPanel />
+        </div>
+        {/* Snippets se mantiene siempre montado para no perder el borrador de
+            "Nuevo snippet" al cambiar de panel y volver */}
+        <div className="absolute inset-0" style={{ display: isSnippetsActive ? "block" : "none" }}>
+          <SnippetsPanel />
+        </div>
+        {OtherActivePanel && (
+          <div className="absolute inset-0">
+            <OtherActivePanel />
+          </div>
+        )}
       </div>
     </div>
   );

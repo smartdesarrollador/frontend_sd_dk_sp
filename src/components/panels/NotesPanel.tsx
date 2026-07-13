@@ -456,8 +456,8 @@ function NoteForm({
         value={form.content}
         onChange={(e) => setField("content", e.target.value)}
         placeholder="Contenido de la nota…"
-        rows={4}
-        className={inputCls + " resize-none"}
+        rows={6}
+        className={inputCls + " resize-y min-h-[80px] max-h-[320px]"}
       />
 
       {/* Tags */}

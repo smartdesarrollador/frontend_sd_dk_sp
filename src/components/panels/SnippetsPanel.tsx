@@ -415,9 +415,9 @@ function SnippetForm({
         value={form.code}
         onChange={(e) => setField("code", e.target.value)}
         placeholder="// código aquí *"
-        rows={4}
+        rows={6}
         required
-        className={inputCls + " font-mono resize-none"}
+        className={inputCls + " font-mono resize-y min-h-[80px] max-h-[320px]"}
       />
 
       <input

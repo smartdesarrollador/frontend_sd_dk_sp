@@ -420,8 +420,8 @@ function TaskForm({
         value={form.description}
         onChange={(e) => setField("description", e.target.value)}
         placeholder="Descripción (opcional)"
-        rows={3}
-        className={inputCls + " resize-none"}
+        rows={5}
+        className={inputCls + " resize-y min-h-[64px] max-h-[320px]"}
       />
 
       {formError && (
