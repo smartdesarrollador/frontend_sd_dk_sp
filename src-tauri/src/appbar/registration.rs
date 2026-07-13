@@ -101,11 +101,6 @@ pub fn reserve_band(hwnd: usize, width: i32) -> RECT {
         data.rc.left = right - width;
         SHAppBarMessage(ABM_SETPOS, &mut data);
 
-        eprintln!(
-            "[appbar] reserve width={width} mon=({},{},{},{}) approved right={right} top={top} bottom={bottom}",
-            mon.left, mon.top, mon.right, mon.bottom
-        );
-
         RECT {
             left: right - width,
             top,

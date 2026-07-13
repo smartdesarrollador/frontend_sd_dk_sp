@@ -143,10 +143,6 @@ fn apply_window_rect(
     window
         .set_position(PhysicalPosition::new(left, top))
         .map_err(|e| format!("set_position error: {e}"))?;
-    eprintln!(
-        "[appbar] apply target={w}x{h} at ({left},{top}) actual={:?}",
-        window.outer_size()
-    );
 
     // Double-tap: right after resume something can re-assert the stale size
     // asynchronously (tao DPI handling / Windows window-position restore),

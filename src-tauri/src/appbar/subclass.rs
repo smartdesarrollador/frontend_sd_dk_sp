@@ -113,7 +113,6 @@ unsafe extern "system" fn appbar_subclass_proc(
         }
         msg if msg == REASSERT_MSG => {
             let width = CURRENT_WIDTH.load(Ordering::Relaxed) as i32;
-            eprintln!("[appbar] deferred reassert width={width}");
             reassert_appbar(hwnd_usize, width);
         }
         msg if msg == APPBAR_CALLBACK => {
