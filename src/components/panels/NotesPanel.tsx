@@ -3,22 +3,28 @@ import {
   Lock, StickyNote, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check, Pin, PinOff, Copy,
-  Share2, CheckSquare,
+  Share2, CheckSquare, Tag,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
+import { apiFetch } from "../../lib/apiFetch"
 import { ShareBlock } from "../shared/ShareBlock"
 import { BulkSelectBar } from "../shared/BulkSelectBar"
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type NoteCategory = "work" | "personal" | "ideas" | "archive"
+interface NoteCategory {
+  id: string
+  name: string
+  color: string
+  notes_count: number
+}
 
 interface Note {
   id: string
   title: string
   content: string
-  category: NoteCategory
+  category: NoteCategory | null
   is_pinned: boolean
   color: string
   tags: string[]
@@ -31,26 +37,10 @@ interface Note {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const CATEGORIES: { value: NoteCategory; label: string }[] = [
-  { value: "work",     label: "Trabajo"  },
-  { value: "personal", label: "Personal" },
-  { value: "ideas",    label: "Ideas"    },
-  { value: "archive",  label: "Archivo"  },
+const CATEGORY_COLOR_PRESETS = [
+  "#2563eb", "#16a34a", "#dc2626", "#9333ea",
+  "#d97706", "#0891b2", "#db2777", "#65a30d",
 ]
-
-const CATEGORY_STYLES: Record<NoteCategory, string> = {
-  work:     "bg-blue-900/50 text-blue-300",
-  personal: "bg-green-900/50 text-green-300",
-  ideas:    "bg-yellow-900/40 text-yellow-300",
-  archive:  "bg-gray-700/60 text-gray-400",
-}
-
-const CATEGORY_LABELS: Record<NoteCategory, string> = {
-  work:     "Trabajo",
-  personal: "Personal",
-  ideas:    "Ideas",
-  archive:  "Archivo",
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es", {
@@ -154,9 +144,23 @@ function NoteItem({
             )}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CATEGORY_STYLES[note.category]}`}>
-              {CATEGORY_LABELS[note.category]}
-            </span>
+            {note.category && (
+              <span
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 shrink-0"
+                style={{ backgroundColor: (note.category.color || "#6b7280") + "20" }}
+              >
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: note.category.color || "#6b7280" }}
+                />
+                <span
+                  className="text-[10px] font-semibold uppercase truncate max-w-[80px]"
+                  style={{ color: note.category.color || "#9ca3af" }}
+                >
+                  {note.category.name}
+                </span>
+              </span>
+            )}
             {note.content && !isExpanded && (
               <p className="truncate text-xs text-gray-500 flex-1">{note.content}</p>
             )}
@@ -284,7 +288,7 @@ function NotesSkeleton() {
 const EMPTY_FORM = {
   title:     "",
   content:   "",
-  category:  "personal" as NoteCategory,
+  category:  "",
   is_pinned: false,
   tags:      "",
 }
@@ -293,7 +297,7 @@ function noteToForm(n: Note) {
   return {
     title:     n.title,
     content:   n.content ?? "",
-    category:  n.category,
+    category:  n.category?.id ?? "",
     is_pinned: n.is_pinned,
     tags:      n.tags?.join(", ") ?? "",
   }
@@ -303,15 +307,13 @@ function NoteForm({
   editNote,
   onCancel,
   onSaved,
-  accessToken,
-  tenantSlug,
+  categories,
   tagSuggestions,
 }: {
   editNote: Note | null
   onCancel: () => void
   onSaved: (note: Note, isEdit: boolean) => void
-  accessToken: string
-  tenantSlug: string
+  categories: NoteCategory[]
   tagSuggestions: string[]
 }) {
   const isEdit = editNote !== null
@@ -360,10 +362,9 @@ function NoteForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = isEdit
-      ? `${apiBase}/api/v1/app/notes/${editNote!.id}/`
-      : `${apiBase}/api/v1/app/notes/`
+    const path = isEdit
+      ? `/api/v1/app/notes/${editNote!.id}/`
+      : `/api/v1/app/notes/`
 
     const tags = form.tags
       .split(",")
@@ -371,17 +372,13 @@ function NoteForm({
       .filter(Boolean)
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(path, {
         method: isEdit ? "PATCH" : "POST",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-          "Content-Type":  "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title:     form.title.trim(),
           content:   form.content.trim(),
-          category:  form.category,
+          category:  form.category || null,
           is_pinned: form.is_pinned,
           tags,
         }),
@@ -432,12 +429,13 @@ function NoteForm({
       <div className="flex gap-2 items-center">
         <select
           value={form.category}
-          onChange={(e) => setField("category", e.target.value as NoteCategory)}
+          onChange={(e) => setField("category", e.target.value)}
           className={inputCls + " cursor-pointer flex-1"}
         >
-          {CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value} className="bg-gray-900">
-              {c.label}
+          <option value="" className="bg-gray-900">Sin categoría</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id} className="bg-gray-900">
+              {c.name}
             </option>
           ))}
         </select>
@@ -523,18 +521,202 @@ function NoteForm({
 }
 
 // ---------------------------------------------------------------------------
+// CategoryManager — inline "gestionar categorías" section (create/delete),
+// same visual pattern as ShareBlock (no modals exist in this app).
+// ---------------------------------------------------------------------------
+const categoryInputCls =
+  "w-full rounded bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/25 transition-colors"
+
+function CategoryRow({
+  category,
+  onDeleted,
+}: {
+  category: NoteCategory
+  onDeleted: (id: string) => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    try {
+      const res = await apiFetch(`/api/v1/app/notes/categories/${category.id}/`, { method: "DELETE" })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onDeleted(category.id)
+    } catch (err) {
+      console.error("[CategoryManager] delete error:", err)
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between rounded bg-white/5 px-2 py-1">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          className="inline-block h-2 w-2 rounded-full shrink-0"
+          style={{ backgroundColor: category.color || "#6b7280" }}
+        />
+        <span className="truncate text-xs text-gray-200">{category.name}</span>
+        <span className="shrink-0 text-[10px] text-gray-500">{category.notes_count} notas</span>
+      </div>
+      {confirming ? (
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[10px] text-red-400 mr-0.5">¿Eliminar?</span>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            className="rounded p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+            title="Confirmar"
+          >
+            {deleting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={deleting}
+            className="rounded p-1 text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-colors"
+            title="Cancelar"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="shrink-0 rounded p-1 text-gray-500 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+          title={`Eliminar categoría ${category.name}`}
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CategoryManager({
+  categories,
+  onClose,
+  onCreated,
+  onDeleted,
+}: {
+  categories: NoteCategory[]
+  onClose: () => void
+  onCreated: (category: NoteCategory) => void
+  onDeleted: (id: string) => void
+}) {
+  const [name, setName] = useState("")
+  const [color, setColor] = useState(CATEGORY_COLOR_PRESETS[0])
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await apiFetch("/api/v1/app/notes/categories/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, color }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        const msg = body?.name?.[0] ?? body?.detail ?? `HTTP ${res.status}`
+        throw new Error(msg)
+      }
+      const created: NoteCategory = await res.json()
+      onCreated(created)
+      setName("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo crear la categoría")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="shrink-0 border-b border-white/10 px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          <Tag size={11} className="shrink-0" />
+          Gestionar categorías
+        </p>
+        <button
+          onClick={onClose}
+          className="shrink-0 rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
+          title="Cerrar"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {categories.length === 0 ? (
+        <p className="text-xs text-gray-600 italic">No hay categorías aún.</p>
+      ) : (
+        <div className="space-y-1">
+          {categories.map((c) => (
+            <CategoryRow key={c.id} category={c} onDeleted={onDeleted} />
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={handleCreate} className="space-y-1.5 pt-1 border-t border-white/10">
+        {error && (
+          <p className="text-xs text-red-400 flex items-center gap-1">
+            <AlertCircle size={11} className="shrink-0" />
+            {error}
+          </p>
+        )}
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nombre de la categoría"
+          maxLength={100}
+          className={categoryInputCls}
+        />
+        <div className="flex items-center gap-1.5">
+          {CATEGORY_COLOR_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setColor(preset)}
+              title={preset}
+              className={`h-4 w-4 rounded-full transition-transform hover:scale-110 ${
+                color === preset ? "ring-2 ring-offset-1 ring-offset-gray-900 ring-white/70" : ""
+              }`}
+              style={{ backgroundColor: preset }}
+            />
+          ))}
+        </div>
+        <button
+          type="submit"
+          disabled={submitting || !name.trim()}
+          className="w-full flex items-center justify-center gap-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 text-xs font-medium text-white transition-colors"
+        >
+          {submitting && <Loader2 size={12} className="animate-spin" />}
+          Agregar categoría
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // NotesPanel
 // ---------------------------------------------------------------------------
 export default function NotesPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const accessToken     = useAuthStore((s) => s.accessToken)
-  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
   const [notes, setNotes]           = useState<Note[]>([])
+  const [categories, setCategories] = useState<NoteCategory[]>([])
   const [isLoading, setIsLoading]   = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [search, setSearch]         = useState("")
-  const [activeCategory, setActiveCategory] = useState<NoteCategory | null>(null)
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new note | Note = edit mode
@@ -542,29 +724,17 @@ export default function NotesPanel() {
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
 
   const showForm = formTarget !== undefined
 
   const fetchNotes = useCallback(async () => {
-    if (!accessToken || !tenantSlug) {
-      console.warn("[NotesPanel] fetchNotes called without accessToken or tenantSlug")
-      return
-    }
+    if (!isAuthenticated) return
     setIsLoading(true)
     setError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = `${apiBase}/api/v1/app/notes/`
-    console.log("[NotesPanel] fetching →", url)
-
     try {
-      const res = await fetch(url, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      console.log("[NotesPanel] response status:", res.status, res.statusText)
+      const res = await apiFetch("/api/v1/app/notes/")
 
       if (!res.ok) {
         const body = await res.text().catch(() => "(sin body)")
@@ -574,7 +744,6 @@ export default function NotesPanel() {
 
       const data = await res.json()
       const list: Note[] = data.notes ?? data.results ?? []
-      console.log("[NotesPanel] notes count:", list.length)
       setNotes(list)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error al cargar notas"
@@ -583,17 +752,31 @@ export default function NotesPanel() {
     } finally {
       setIsLoading(false)
     }
-  }, [accessToken, tenantSlug])
+  }, [isAuthenticated])
+
+  const fetchCategories = useCallback(async () => {
+    if (!isAuthenticated) return
+    try {
+      const res = await apiFetch("/api/v1/app/notes/categories/")
+      if (!res.ok) return
+      const data = await res.json()
+      setCategories(data.categories ?? data.results ?? [])
+    } catch {
+      // silent — categories are optional for filter/form UI
+    }
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchNotes()
+      fetchCategories()
     } else {
       setNotes([])
+      setCategories([])
       setError(null)
       setFormTarget(undefined)
     }
-  }, [isAuthenticated, fetchNotes])
+  }, [isAuthenticated, fetchNotes, fetchCategories])
 
   function handleSaved(note: Note, isEdit: boolean) {
     if (isEdit) {
@@ -606,16 +789,8 @@ export default function NotesPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!accessToken || !tenantSlug) return
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/notes/${id}/`, {
-        method: "DELETE",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch(`/api/v1/app/notes/${id}/`, { method: "DELETE" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setNotes((prev) => prev.filter((n) => n.id !== id))
       if (expandedId === id) setExpandedId(null)
@@ -625,16 +800,8 @@ export default function NotesPanel() {
   }
 
   async function handleTogglePin(note: Note) {
-    if (!accessToken || !tenantSlug) return
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
     try {
-      const res = await fetch(`${apiBase}/api/v1/app/notes/${note.id}/pin/`, {
-        method: "PATCH",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
+      const res = await apiFetch(`/api/v1/app/notes/${note.id}/pin/`, { method: "PATCH" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const updated: Note = await res.json()
       setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)))
@@ -652,11 +819,23 @@ export default function NotesPanel() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
+  function handleCategoryCreated(category: NoteCategory) {
+    setCategories((prev) => [...prev, category])
+  }
+
+  async function handleCategoryDeleted(id: string) {
+    setCategories((prev) => prev.filter((c) => c.id !== id))
+    if (activeCategory === id) setActiveCategory(null)
+    // Notes that referenced this category are set to null server-side (SET_NULL) —
+    // resync from the server instead of patching local state by hand.
+    fetchNotes()
+  }
+
   // Categories present in the list
   const presentCategories = useMemo(() => {
-    const set = new Set(notes.map((n) => n.category))
-    return CATEGORIES.filter((c) => set.has(c.value))
-  }, [notes])
+    const ids = new Set(notes.map((n) => n.category?.id).filter(Boolean))
+    return categories.filter((c) => ids.has(c.id))
+  }, [notes, categories])
 
   // Distinct tags present in the list (used for both the tag filter and
   // the tag autocomplete in NoteForm — no separate API call needed since
@@ -671,7 +850,7 @@ export default function NotesPanel() {
   const filtered = useMemo(() => {
     let list = notes
     if (activeCategory) {
-      list = list.filter((n) => n.category === activeCategory)
+      list = list.filter((n) => n.category?.id === activeCategory)
     }
     if (activeTag) {
       list = list.filter((n) => n.tags?.includes(activeTag))
@@ -758,6 +937,17 @@ export default function NotesPanel() {
               </button>
             )}
             <button
+              onClick={() => setShowCategoryManager((prev) => !prev)}
+              className={`rounded p-1 transition-colors ${
+                showCategoryManager
+                  ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+                  : "text-gray-500 hover:text-gray-200 hover:bg-white/10"
+              }`}
+              title="Gestionar categorías"
+            >
+              <Tag size={13} />
+            </button>
+            <button
               onClick={toggleFormOrClose}
               className={`rounded p-1 transition-colors ${
                 showForm && formTarget === null
@@ -802,12 +992,21 @@ export default function NotesPanel() {
         <ShareBlock resourceType="note" resources={shareResources} onClose={handleCloseShare} />
       )}
 
+      {/* Category manager */}
+      {showCategoryManager && (
+        <CategoryManager
+          categories={categories}
+          onClose={() => setShowCategoryManager(false)}
+          onCreated={handleCategoryCreated}
+          onDeleted={handleCategoryDeleted}
+        />
+      )}
+
       {/* Create / Edit form */}
-      {showForm && accessToken && tenantSlug && (
+      {showForm && (
         <NoteForm
           editNote={formTarget ?? null}
-          accessToken={accessToken}
-          tenantSlug={tenantSlug}
+          categories={categories}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
           tagSuggestions={allTags}
@@ -838,19 +1037,27 @@ export default function NotesPanel() {
 
           {presentCategories.length >= 2 && (
             <div className="flex flex-wrap gap-1">
-              {presentCategories.map((c) => (
-                <button
-                  key={c.value}
-                  onClick={() => setActiveCategory((prev) => (prev === c.value ? null : c.value))}
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase transition-colors ${
-                    activeCategory === c.value
-                      ? CATEGORY_STYLES[c.value] + " ring-1 ring-white/30"
-                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
-                  }`}
-                >
-                  {c.label}
-                </button>
-              ))}
+              {presentCategories.map((c) => {
+                const isActive = activeCategory === c.id
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setActiveCategory((prev) => (prev === c.id ? null : c.id))}
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase transition-colors ${
+                      isActive
+                        ? "ring-1 ring-white/30"
+                        : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                    }`}
+                    style={
+                      isActive
+                        ? { backgroundColor: (c.color || "#6b7280") + "30", color: c.color || "#e5e7eb" }
+                        : undefined
+                    }
+                  >
+                    {c.name}
+                  </button>
+                )
+              })}
             </div>
           )}
 
