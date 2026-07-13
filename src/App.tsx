@@ -39,9 +39,13 @@ function App() {
     if (pendingPanel) { handlePanelChange(pendingPanel); clearPending(); }
   }, [pendingPanel]);
 
+  // No cleanup on purpose: with StrictMode's double-mount the three async
+  // invokes (register #1 → unregister #1 → register #2) have no ordering
+  // guarantee — if the unregister lands last the appbar ends up unregistered
+  // (no reserved work-area, resize_appbar becomes a no-op → sliver panel).
+  // Real teardown is handled natively by the Destroyed handler in lib.rs.
   useEffect(() => {
     invoke("register_appbar", { width: ICON_WIDTH }).catch(console.error);
-    return () => { invoke("unregister_appbar").catch(console.error); };
   }, []);
 
   const handlePanelChange = async (panel: PanelId) => {

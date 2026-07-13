@@ -1,8 +1,11 @@
-import { useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Home, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
   Settings, X, ShieldCheck, Search, Sparkles, Wrench,
+  ChevronUp, ChevronDown,
+  // TEMP-SCROLL-TEST: iconos solo para probar el scroll — eliminar junto con TEMP_TEST_ITEMS
+  Star, Heart, Camera, Music, Map, Cloud, Zap, Gift, Globe, Rocket,
 } from "lucide-react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import type { PanelId, NavItem } from "../types"
@@ -31,6 +34,21 @@ const ALL_NAV_META: Partial<Record<PanelId, NavItem>> = {
 
 const settingsItem: NavItem = { id: "settings", icon: Settings, label: "Settings" }
 
+// TEMP-SCROLL-TEST: 10 iconos de relleno para probar el scroll con overflow real.
+// No son paneles (click no hace nada). ELIMINAR este bloque y su render tras la prueba.
+const TEMP_TEST_ITEMS = [
+  { icon: Star,   label: "Test 1"  },
+  { icon: Heart,  label: "Test 2"  },
+  { icon: Camera, label: "Test 3"  },
+  { icon: Music,  label: "Test 4"  },
+  { icon: Map,    label: "Test 5"  },
+  { icon: Cloud,  label: "Test 6"  },
+  { icon: Zap,    label: "Test 7"  },
+  { icon: Gift,   label: "Test 8"  },
+  { icon: Globe,  label: "Test 9"  },
+  { icon: Rocket, label: "Test 10" },
+].map((t, i) => ({ ...t, id: `temp-test-${i}` as PanelId } satisfies NavItem))
+
 interface IconStripProps {
   activePanel: PanelId | null;
   onPanelChange: (panel: PanelId) => void;
@@ -41,6 +59,10 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
   const sidebarOrder  = useSettingsStore((s) => s.sidebarOrder)
   const hiddenPanels  = useSettingsStore((s) => s.hiddenPanels)
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollUp, setCanScrollUp]     = useState(false)
+  const [canScrollDown, setCanScrollDown] = useState(false)
+
   const orderedNavItems = useMemo(
     () =>
       sidebarOrder
@@ -50,37 +72,98 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
     [sidebarOrder, hiddenPanels],
   )
 
+  const updateScrollIndicators = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollUp(el.scrollTop > 0)
+    setCanScrollDown(el.scrollTop + el.clientHeight < el.scrollHeight - 1)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    updateScrollIndicators()
+    el.addEventListener("scroll", updateScrollIndicators, { passive: true })
+    const observer = new ResizeObserver(updateScrollIndicators)
+    observer.observe(el)
+    for (const child of Array.from(el.children)) observer.observe(child)
+    return () => {
+      el.removeEventListener("scroll", updateScrollIndicators)
+      observer.disconnect()
+    }
+  }, [updateScrollIndicators, orderedNavItems.length])
+
+  const scrollByPage = (direction: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ top: direction * el.clientHeight, behavior: "smooth" })
+  }
+
   return (
-    <div className="flex h-full w-[60px] flex-col items-center justify-between bg-[#1e1e2e] py-4">
-      <div className="flex flex-col items-center gap-1">
-        {orderedNavItems.map((item) => {
-          if (item.id === "alerts") {
+    <div className="flex h-full w-[60px] flex-col items-center bg-[#1e1e2e] py-4">
+      <div className="relative min-h-0 w-full flex-1">
+        <div
+          ref={scrollRef}
+          className="scrollbar-hide flex h-full flex-col items-center gap-1 overflow-y-auto"
+        >
+          {orderedNavItems.map((item) => {
+            if (item.id === "alerts") {
+              return (
+                <div key="alerts" className="relative shrink-0">
+                  <NavIcon
+                    item={item}
+                    isActive={activePanel === item.id}
+                    onClick={() => onPanelChange(item.id)}
+                  />
+                  {unreadCount > 0 && (
+                    <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </div>
+              )
+            }
             return (
-              <div key="alerts" className="relative">
+              <div key={item.id} className="shrink-0">
                 <NavIcon
                   item={item}
                   isActive={activePanel === item.id}
                   onClick={() => onPanelChange(item.id)}
                 />
-                {unreadCount > 0 && (
-                  <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
               </div>
             )
-          }
-          return (
-            <NavIcon
-              key={item.id}
-              item={item}
-              isActive={activePanel === item.id}
-              onClick={() => onPanelChange(item.id)}
-            />
-          )
-        })}
+          })}
+          {/* TEMP-SCROLL-TEST: eliminar tras la prueba */}
+          {TEMP_TEST_ITEMS.map((item) => (
+            <div key={item.id} className="shrink-0">
+              <NavIcon item={item} isActive={false} onClick={() => {}} />
+            </div>
+          ))}
+        </div>
+        {canScrollUp && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex h-4 items-start justify-center bg-gradient-to-b from-[#1e1e2e] to-transparent">
+            <button
+              onClick={() => scrollByPage(-1)}
+              aria-label="Desplazar iconos hacia arriba"
+              className="pointer-events-auto text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <ChevronUp size={14} />
+            </button>
+          </div>
+        )}
+        {canScrollDown && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-4 items-end justify-center bg-gradient-to-t from-[#1e1e2e] to-transparent">
+            <button
+              onClick={() => scrollByPage(1)}
+              aria-label="Desplazar iconos hacia abajo"
+              className="pointer-events-auto text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        )}
       </div>
-      <div className="flex flex-col items-center gap-1">
+      <div className="mt-1 flex flex-col items-center gap-1">
         <NavIcon
           item={settingsItem}
           isActive={activePanel === "settings"}
