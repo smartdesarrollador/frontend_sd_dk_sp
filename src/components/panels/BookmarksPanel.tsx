@@ -3,7 +3,7 @@ import {
   Lock, Bookmark, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
   Plus, Loader2, Pencil, Trash2, Check,
-  Globe, Tag, ExternalLink, Clipboard, Copy,
+  Globe, Tag, ExternalLink, Clipboard, Copy, FolderOpen,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
@@ -16,6 +16,7 @@ interface BookmarkCollection {
   id: string
   name: string
   color: string
+  bookmarks_count: number
 }
 
 interface BookmarkItem {
@@ -25,11 +26,15 @@ interface BookmarkItem {
   description: string
   tags: string[]
   favicon_url: string
-  collection: string | null          // UUID
-  collection_name: string | null     // read-only derived
+  collection: BookmarkCollection | null
   created_at: string
   updated_at: string
 }
+
+const COLLECTION_COLOR_PRESETS = [
+  "#2563eb", "#16a34a", "#dc2626", "#9333ea",
+  "#d97706", "#0891b2", "#db2777", "#65a30d",
+]
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,14 +74,12 @@ function CollectionBadge({ name, color }: { name: string; color: string }) {
 // ---------------------------------------------------------------------------
 function BookmarkItemRow({
   bookmark,
-  collections,
   isExpanded,
   onToggleExpand,
   onEdit,
   onDelete,
 }: {
   bookmark: BookmarkItem
-  collections: BookmarkCollection[]
   isExpanded: boolean
   onToggleExpand: () => void
   onEdit: () => void
@@ -87,7 +90,7 @@ function BookmarkItemRow({
   const [faviconSrc]                      = useState(() => getFaviconSrc(bookmark))
   const [faviconFailed, setFaviconFailed] = useState(!faviconSrc)
 
-  const collection = collections.find((c) => c.id === bookmark.collection) ?? null
+  const collection = bookmark.collection
   const domain     = getDomain(bookmark.url)
 
   function stop(e: React.MouseEvent) { e.stopPropagation() }
@@ -275,7 +278,7 @@ function bookmarkToForm(b: BookmarkItem) {
     url:         b.url,
     title:       b.title,
     description: b.description ?? "",
-    collection:  b.collection ?? "",
+    collection:  b.collection?.id ?? "",
     tags:        b.tags?.join(", ") ?? "",
     favicon_url: b.favicon_url ?? "",
   }
@@ -506,6 +509,191 @@ function BookmarkForm({
 }
 
 // ---------------------------------------------------------------------------
+// CollectionManager — inline "gestionar colecciones" section (create/delete),
+// same pattern as CategoryManager in NotesPanel.tsx (no modals in this app).
+// ---------------------------------------------------------------------------
+const collectionInputCls =
+  "w-full rounded bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/25 transition-colors"
+
+function CollectionRow({
+  collection,
+  onDeleted,
+}: {
+  collection: BookmarkCollection
+  onDeleted: (id: string) => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    try {
+      const res = await apiFetch(`/api/v1/app/bookmarks/collections/${collection.id}/`, { method: "DELETE" })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onDeleted(collection.id)
+    } catch (err) {
+      console.error("[CollectionManager] delete error:", err)
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between rounded bg-white/5 px-2 py-1">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          className="inline-block h-2 w-2 rounded-full shrink-0"
+          style={{ backgroundColor: collection.color || "#6b7280" }}
+        />
+        <span className="truncate text-xs text-gray-200">{collection.name}</span>
+        <span className="shrink-0 text-[10px] text-gray-500">{collection.bookmarks_count} bookmarks</span>
+      </div>
+      {confirming ? (
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[10px] text-red-400 mr-0.5">¿Eliminar?</span>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            className="rounded p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+            title="Confirmar"
+          >
+            {deleting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={deleting}
+            className="rounded p-1 text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-colors"
+            title="Cancelar"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="shrink-0 rounded p-1 text-gray-500 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+          title={`Eliminar colección ${collection.name}`}
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CollectionManager({
+  collections,
+  onClose,
+  onCreated,
+  onDeleted,
+}: {
+  collections: BookmarkCollection[]
+  onClose: () => void
+  onCreated: (collection: BookmarkCollection) => void
+  onDeleted: (id: string) => void
+}) {
+  const [name, setName] = useState("")
+  const [color, setColor] = useState(COLLECTION_COLOR_PRESETS[0])
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await apiFetch("/api/v1/app/bookmarks/collections/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, color }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        const msg = body?.name?.[0] ?? body?.detail ?? `HTTP ${res.status}`
+        throw new Error(msg)
+      }
+      const created: BookmarkCollection = await res.json()
+      onCreated(created)
+      setName("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo crear la colección")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="shrink-0 border-b border-white/10 px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          <FolderOpen size={11} className="shrink-0" />
+          Gestionar colecciones
+        </p>
+        <button
+          onClick={onClose}
+          className="shrink-0 rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
+          title="Cerrar"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {collections.length === 0 ? (
+        <p className="text-xs text-gray-600 italic">No hay colecciones aún.</p>
+      ) : (
+        <div className="space-y-1">
+          {collections.map((c) => (
+            <CollectionRow key={c.id} collection={c} onDeleted={onDeleted} />
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={handleCreate} className="space-y-1.5 pt-1 border-t border-white/10">
+        {error && (
+          <p className="text-xs text-red-400 flex items-center gap-1">
+            <AlertCircle size={11} className="shrink-0" />
+            {error}
+          </p>
+        )}
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nombre de la colección"
+          maxLength={100}
+          className={collectionInputCls}
+        />
+        <div className="flex items-center gap-1.5">
+          {COLLECTION_COLOR_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setColor(preset)}
+              title={preset}
+              className={`h-4 w-4 rounded-full transition-transform hover:scale-110 ${
+                color === preset ? "ring-2 ring-offset-1 ring-offset-gray-900 ring-white/70" : ""
+              }`}
+              style={{ backgroundColor: preset }}
+            />
+          ))}
+        </div>
+        <button
+          type="submit"
+          disabled={submitting || !name.trim()}
+          className="w-full flex items-center justify-center gap-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 text-xs font-medium text-white transition-colors"
+        >
+          {submitting && <Loader2 size={12} className="animate-spin" />}
+          Agregar colección
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // BookmarksPanel
 // ---------------------------------------------------------------------------
 export default function BookmarksPanel() {
@@ -523,6 +711,7 @@ export default function BookmarksPanel() {
   const [formTarget, setFormTarget]   = useState<BookmarkItem | null | undefined>(undefined)
   const [clipboardUrl, setClipboardUrl]       = useState<string | null>(null)
   const [pasteInitialUrl, setPasteInitialUrl] = useState<string>("")
+  const [showCollectionManager, setShowCollectionManager] = useState(false)
 
   const showForm = formTarget !== undefined
 
@@ -604,9 +793,21 @@ export default function BookmarksPanel() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
+  function handleCollectionCreated(collection: BookmarkCollection) {
+    setCollections((prev) => [...prev, collection])
+  }
+
+  function handleCollectionDeleted(id: string) {
+    setCollections((prev) => prev.filter((c) => c.id !== id))
+    if (activeCollection === id) setActiveCollection(null)
+    // Bookmarks that referenced this collection are set to null server-side (SET_NULL) —
+    // resync from the server instead of patching local state by hand.
+    fetchBookmarks()
+  }
+
   // Collections present in the current bookmark list
   const presentCollections = useMemo(() => {
-    const ids = new Set(bookmarks.map((b) => b.collection).filter(Boolean))
+    const ids = new Set(bookmarks.map((b) => b.collection?.id).filter(Boolean))
     return collections.filter((c) => ids.has(c.id))
   }, [bookmarks, collections])
 
@@ -622,7 +823,7 @@ export default function BookmarksPanel() {
   const filtered = useMemo(() => {
     let list = bookmarks
     if (activeCollection) {
-      list = list.filter((b) => b.collection === activeCollection)
+      list = list.filter((b) => b.collection?.id === activeCollection)
     }
     if (activeTag) {
       list = list.filter((b) => b.tags?.includes(activeTag))
@@ -679,6 +880,17 @@ export default function BookmarksPanel() {
               </button>
             )}
             <button
+              onClick={() => setShowCollectionManager((prev) => !prev)}
+              className={`rounded p-1 transition-colors ${
+                showCollectionManager
+                  ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30"
+                  : "text-gray-500 hover:text-gray-200 hover:bg-white/10"
+              }`}
+              title="Gestionar colecciones"
+            >
+              <FolderOpen size={13} />
+            </button>
+            <button
               onClick={toggleFormOrClose}
               className={`rounded p-1 transition-colors ${
                 showForm && formTarget === null
@@ -700,6 +912,16 @@ export default function BookmarksPanel() {
           </div>
         </div>
       </header>
+
+      {/* Collection manager */}
+      {showCollectionManager && (
+        <CollectionManager
+          collections={collections}
+          onClose={() => setShowCollectionManager(false)}
+          onCreated={handleCollectionCreated}
+          onDeleted={handleCollectionDeleted}
+        />
+      )}
 
       {/* Create / Edit form */}
       {showForm && (
@@ -818,7 +1040,6 @@ export default function BookmarksPanel() {
             <BookmarkItemRow
               key={bookmark.id}
               bookmark={bookmark}
-              collections={collections}
               isExpanded={expandedId === bookmark.id}
               onToggleExpand={() => toggleExpand(bookmark.id)}
               onEdit={() => { setExpandedId(null); setFormTarget(bookmark) }}
