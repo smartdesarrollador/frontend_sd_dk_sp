@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Sidebar from "./components/Sidebar";
+import { useWakeReload } from "./hooks/useWakeReload";
 import { useNotificationsPoller } from "./features/notifications/useNotificationsPoller";
 import { useNavigationStore } from "./store/navigationStore";
 import { useSettingsStore } from "./store/settingsStore";
@@ -10,6 +11,9 @@ const ICON_WIDTH = 60;
 
 function App() {
   const [activePanel, setActivePanel] = useState<PanelId | null>(null);
+
+  // Reload the WebView after resume-from-suspend (blank/frozen recovery).
+  useWakeReload();
 
   const storePanelWidth    = useSettingsStore((s) => s.panelWidth);
   const setStorePanelWidth = useSettingsStore((s) => s.setPanelWidth);

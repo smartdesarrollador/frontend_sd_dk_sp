@@ -7,6 +7,27 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Self-healing boot: right after resume-from-suspend the network can flap
+      // while modules are still loading (ERR_NETWORK_CHANGED), leaving a blank
+      // page where React never mounts — and once that happens no app code runs
+      // to retry. This inline script (no network dependency) checks whether the
+      // app mounted and reloads with backoff until it does.
+      (function () {
+        var KEY = "boot-retry";
+        var attempt = Number(sessionStorage.getItem(KEY) || "0");
+        var delay = 2500 + attempt * 1500;
+        setTimeout(function check() {
+          var root = document.getElementById("root");
+          if (root && root.childElementCount > 0) {
+            sessionStorage.removeItem(KEY); // mounted fine
+          } else if (attempt < 10) {
+            sessionStorage.setItem(KEY, String(attempt + 1));
+            location.reload();
+          }
+        }, delay);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
