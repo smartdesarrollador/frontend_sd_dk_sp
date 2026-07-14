@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import {
   Lock, Bookmark, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -8,33 +8,15 @@ import {
 import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
 import { openExternal } from "../../lib/openExternal"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-interface BookmarkCollection {
-  id: string
-  name: string
-  color: string
-  bookmarks_count: number
-}
-
-interface BookmarkItem {
-  id: string
-  url: string
-  title: string
-  description: string
-  tags: string[]
-  favicon_url: string
-  collection: BookmarkCollection | null
-  created_at: string
-  updated_at: string
-}
-
-const COLLECTION_COLOR_PRESETS = [
-  "#2563eb", "#16a34a", "#dc2626", "#9333ea",
-  "#d97706", "#0891b2", "#db2777", "#65a30d",
-]
+import { COLLECTION_COLOR_PRESETS } from "../../features/bookmarks/types"
+import type { BookmarkCollection, BookmarkItem } from "../../features/bookmarks/types"
+import { useBookmarks } from "../../features/bookmarks/hooks/useBookmarks"
+import { useBookmarkCollections } from "../../features/bookmarks/hooks/useBookmarkCollections"
+import { useBookmarkTags } from "../../features/bookmarks/hooks/useBookmarkTags"
+import { useBookmarkMutations } from "../../features/bookmarks/hooks/useBookmarkMutations"
+import type { BookmarkPayload } from "../../features/bookmarks/hooks/useBookmarkMutations"
+import { useDebouncedValue } from "../../features/search/hooks/useDebouncedValue"
+import Pagination from "../shared/Pagination"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -290,13 +272,15 @@ function BookmarkForm({
   initialUrl,
   onCancel,
   onSaved,
+  onSubmit,
   tagSuggestions,
 }: {
   editBookmark: BookmarkItem | null
   collections: BookmarkCollection[]
   initialUrl?: string
   onCancel: () => void
-  onSaved: (bookmark: BookmarkItem, isEdit: boolean) => void
+  onSaved: () => void
+  onSubmit: (payload: BookmarkPayload) => Promise<BookmarkItem>
   tagSuggestions: string[]
 }) {
   const isEdit = editBookmark !== null
@@ -347,41 +331,21 @@ function BookmarkForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const path = isEdit
-      ? `/api/v1/app/bookmarks/${editBookmark!.id}/`
-      : `/api/v1/app/bookmarks/`
-
     const tags = form.tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
 
     try {
-      const res = await apiFetch(path, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url:         form.url.trim(),
-          title:       form.title.trim(),
-          description: form.description.trim(),
-          collection:  form.collection || null,
-          tags,
-          favicon_url: form.favicon_url.trim() || "",
-        }),
+      await onSubmit({
+        url:         form.url.trim(),
+        title:       form.title.trim(),
+        description: form.description.trim(),
+        collection:  form.collection || null,
+        tags,
+        favicon_url: form.favicon_url.trim() || "",
       })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        const msg =
-          body?.detail ??
-          body?.url?.[0] ??
-          body?.title?.[0] ??
-          `HTTP ${res.status}`
-        throw new Error(msg)
-      }
-
-      const saved: BookmarkItem = await res.json()
-      onSaved(saved, isEdit)
+      onSaved()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error al guardar bookmark")
     } finally {
@@ -699,13 +663,11 @@ function CollectionManager({
 export default function BookmarksPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  const [bookmarks, setBookmarks]     = useState<BookmarkItem[]>([])
-  const [collections, setCollections] = useState<BookmarkCollection[]>([])
-  const [isLoading, setIsLoading]     = useState(false)
-  const [error, setError]             = useState<string | null>(null)
-  const [search, setSearch]           = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const debouncedSearch               = useDebouncedValue(searchInput, 350)
   const [activeCollection, setActiveCollection] = useState<string | null>(null)
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   // undefined = closed | null = new | BookmarkItem = edit
   const [formTarget, setFormTarget]   = useState<BookmarkItem | null | undefined>(undefined)
@@ -714,49 +676,37 @@ export default function BookmarksPanel() {
   const [showCollectionManager, setShowCollectionManager] = useState(false)
 
   const showForm = formTarget !== undefined
+  const listRef  = useRef<HTMLDivElement>(null)
 
-  const fetchCollections = useCallback(async () => {
-    if (!isAuthenticated) return
-    try {
-      const res = await apiFetch("/api/v1/app/bookmarks/collections/")
-      if (!res.ok) return
-      const data = await res.json()
-      setCollections(data.collections ?? data.results ?? [])
-    } catch {
-      // silent — collections are optional UI enhancement
-    }
-  }, [isAuthenticated])
+  const { bookmarks, pagination, isLoading, error, refetch: refetchBookmarks } =
+    useBookmarks({ collection: activeCollection, tag: activeTag, search: debouncedSearch, page })
+  const { collections, refetch: refetchCollections } = useBookmarkCollections()
+  const { tags, refetch: refetchTags } = useBookmarkTags()
 
-  const fetchBookmarks = useCallback(async () => {
-    if (!isAuthenticated) return
-    setIsLoading(true)
-    setError(null)
-    try {
-      const res = await apiFetch("/api/v1/app/bookmarks/")
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText}`)
-      }
-      const data = await res.json()
-      setBookmarks(data.bookmarks ?? data.results ?? [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar bookmarks")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [isAuthenticated])
+  const mutations = useBookmarkMutations(() => {
+    refetchBookmarks()
+    refetchCollections()
+    refetchTags()
+  })
 
+  // Reset to page 1 when filters change
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchCollections()
-      fetchBookmarks()
-    } else {
-      setBookmarks([])
-      setCollections([])
-      setError(null)
-      setFormTarget(undefined)
-      setClipboardUrl(null)
+    setPage(1)
+  }, [activeCollection, activeTag, debouncedSearch])
+
+  // Reset scroll position when the page changes
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  // Fallback if the current page becomes empty (e.g. deleted the last
+  // bookmark on it) — bookmarks pagination has no "pinned" split, so this
+  // can rely directly on bookmarks.length, unlike notes.
+  useEffect(() => {
+    if (!isLoading && pagination.total > 0 && bookmarks.length === 0 && page > 1) {
+      setPage(1)
     }
-  }, [isAuthenticated, fetchCollections, fetchBookmarks])
+  }, [isLoading, pagination.total, bookmarks, page])
 
   // Detect URL in clipboard and offer quick-add button
   useEffect(() => {
@@ -769,77 +719,49 @@ export default function BookmarksPanel() {
       .catch(() => {})
   }, [isAuthenticated])
 
-  function handleSaved(bookmark: BookmarkItem, isEdit: boolean) {
-    if (isEdit) {
-      setBookmarks((prev) => prev.map((b) => (b.id === bookmark.id ? bookmark : b)))
-    } else {
-      setBookmarks((prev) => [bookmark, ...prev])
-    }
+  function handleSaved() {
     setFormTarget(undefined)
   }
 
+  async function handleFormSubmit(payload: BookmarkPayload) {
+    return formTarget ? mutations.update(formTarget.id, payload) : mutations.create(payload)
+  }
+
   async function handleDelete(id: string) {
-    try {
-      const res = await apiFetch(`/api/v1/app/bookmarks/${id}/`, { method: "DELETE" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setBookmarks((prev) => prev.filter((b) => b.id !== id))
-      if (expandedId === id) setExpandedId(null)
-    } catch (err) {
-      console.error("[BookmarksPanel] delete error:", err)
-    }
+    const ok = await mutations.remove(id)
+    if (!ok) return
+    if (expandedId === id) setExpandedId(null)
   }
 
   function toggleFormOrClose() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
-  function handleCollectionCreated(collection: BookmarkCollection) {
-    setCollections((prev) => [...prev, collection])
+  function handleCollectionCreated() {
+    refetchCollections()
   }
 
   function handleCollectionDeleted(id: string) {
-    setCollections((prev) => prev.filter((c) => c.id !== id))
     if (activeCollection === id) setActiveCollection(null)
     // Bookmarks that referenced this collection are set to null server-side (SET_NULL) —
-    // resync from the server instead of patching local state by hand.
-    fetchBookmarks()
+    // resync bookmarks and collections from the server instead of patching local state.
+    refetchBookmarks()
+    refetchCollections()
   }
 
-  // Collections present in the current bookmark list
-  const presentCollections = useMemo(() => {
-    const ids = new Set(bookmarks.map((b) => b.collection?.id).filter(Boolean))
-    return collections.filter((c) => ids.has(c.id))
-  }, [bookmarks, collections])
+  function handleRefresh() {
+    refetchBookmarks()
+    refetchCollections()
+    refetchTags()
+  }
 
-  // Distinct tags present in the list (used for both the tag filter and
-  // the tag autocomplete in BookmarkForm — no separate API call needed).
-  const allTags = useMemo(() => {
-    const set = new Set<string>()
-    bookmarks.forEach((b) => b.tags?.forEach((t) => set.add(t)))
-    return Array.from(set).sort()
-  }, [bookmarks])
+  // Collections with at least one bookmark, based on server-side bookmarks_count
+  const presentCollections = useMemo(
+    () => collections.filter((c) => c.bookmarks_count > 0),
+    [collections]
+  )
 
-  // Filtered list
-  const filtered = useMemo(() => {
-    let list = bookmarks
-    if (activeCollection) {
-      list = list.filter((b) => b.collection?.id === activeCollection)
-    }
-    if (activeTag) {
-      list = list.filter((b) => b.tags?.includes(activeTag))
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.url.toLowerCase().includes(q) ||
-          b.description?.toLowerCase().includes(q) ||
-          b.tags?.some((t) => t.toLowerCase().includes(q))
-      )
-    }
-    return list
-  }, [bookmarks, activeCollection, activeTag, search])
+  const hasActiveFilters = Boolean(activeCollection || activeTag || debouncedSearch.trim())
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -861,8 +783,8 @@ export default function BookmarksPanel() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Bookmarks</h2>
           <div className="flex items-center gap-1">
-            {!isLoading && !error && bookmarks.length > 0 && (
-              <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            {!isLoading && !error && pagination.total > 0 && (
+              <span className="text-xs text-gray-500 mr-1">{pagination.total}</span>
             )}
             {/* Clipboard paste button */}
             {clipboardUrl && !showForm && (
@@ -902,7 +824,7 @@ export default function BookmarksPanel() {
               {showForm && formTarget === null ? <X size={13} /> : <Plus size={13} />}
             </button>
             <button
-              onClick={fetchBookmarks}
+              onClick={handleRefresh}
               disabled={isLoading}
               className="rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40"
               title="Actualizar"
@@ -930,26 +852,27 @@ export default function BookmarksPanel() {
           collections={collections}
           initialUrl={pasteInitialUrl}
           onCancel={() => { setFormTarget(undefined); setPasteInitialUrl("") }}
-          onSaved={(bm, isEdit) => { handleSaved(bm, isEdit); setPasteInitialUrl("") }}
-          tagSuggestions={allTags}
+          onSaved={() => { handleSaved(); setPasteInitialUrl("") }}
+          onSubmit={handleFormSubmit}
+          tagSuggestions={tags}
         />
       )}
 
       {/* Search + collection filter pills */}
-      {!isLoading && !error && bookmarks.length > 0 && (
+      {!isLoading && !error && (pagination.total > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Buscar bookmarks…"
               className="w-full rounded bg-white/5 border border-white/10 pl-6 pr-6 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors"
             />
-            {search && (
+            {searchInput && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-1.5 text-gray-500 hover:text-gray-300 transition-colors"
               >
                 <X size={11} />
@@ -979,9 +902,9 @@ export default function BookmarksPanel() {
             </div>
           )}
 
-          {allTags.length >= 2 && (
+          {tags.length >= 2 && (
             <div className="flex flex-wrap gap-1">
-              {allTags.map((tag) => (
+              {tags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
@@ -1006,7 +929,7 @@ export default function BookmarksPanel() {
           <AlertCircle size={28} className="text-red-400" />
           <p className="text-sm text-gray-400">{error}</p>
           <button
-            onClick={fetchBookmarks}
+            onClick={handleRefresh}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Reintentar
@@ -1014,7 +937,7 @@ export default function BookmarksPanel() {
         </div>
       )}
 
-      {!isLoading && !error && bookmarks.length === 0 && (
+      {!isLoading && !error && !hasActiveFilters && pagination.total === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <Bookmark size={32} className="text-gray-600" />
           <p className="text-sm text-gray-400">No tienes bookmarks aún</p>
@@ -1027,16 +950,16 @@ export default function BookmarksPanel() {
         </div>
       )}
 
-      {!isLoading && !error && bookmarks.length > 0 && filtered.length === 0 && (
+      {!isLoading && !error && hasActiveFilters && bookmarks.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center">
           <Search size={24} className="text-gray-600" />
           <p className="text-sm text-gray-400">Sin resultados</p>
         </div>
       )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {filtered.map((bookmark) => (
+      {!isLoading && !error && bookmarks.length > 0 && (
+        <div ref={listRef} className="flex-1 overflow-y-auto p-2">
+          {bookmarks.map((bookmark) => (
             <BookmarkItemRow
               key={bookmark.id}
               bookmark={bookmark}
@@ -1048,6 +971,13 @@ export default function BookmarksPanel() {
           ))}
         </div>
       )}
+
+      <Pagination
+        page={pagination.page}
+        perPage={pagination.per_page}
+        total={pagination.total}
+        onPageChange={setPage}
+      />
     </div>
   )
 }

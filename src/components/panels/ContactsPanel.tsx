@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import {
   Lock, Users, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -7,36 +7,15 @@ import {
   Share2, CheckSquare,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
-import { apiFetch } from "../../lib/apiFetch"
 import { ShareBlock } from "../shared/ShareBlock"
 import { BulkSelectBar } from "../shared/BulkSelectBar"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-interface ContactGroup {
-  id: string
-  name: string
-  color: string
-  contacts_count: number
-}
-
-interface Contact {
-  id: string
-  name: string
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
-  company: string
-  job_title: string
-  notes: string
-  group: ContactGroup | null
-  is_shared: boolean
-  shared_by_name: string | null
-  created_at: string
-  updated_at: string
-}
+import type { Contact, ContactGroup } from "../../features/contacts/types"
+import { useContacts } from "../../features/contacts/hooks/useContacts"
+import { useContactGroups } from "../../features/contacts/hooks/useContactGroups"
+import { useContactMutations } from "../../features/contacts/hooks/useContactMutations"
+import type { ContactPayload } from "../../features/contacts/hooks/useContactMutations"
+import { useDebouncedValue } from "../../features/search/hooks/useDebouncedValue"
+import Pagination from "../shared/Pagination"
 
 // ---------------------------------------------------------------------------
 // Avatar helpers
@@ -61,7 +40,7 @@ function getAvatarColor(name: string): string {
 }
 
 // Group badge: render a small colored dot + name
-function GroupBadge({ group }: { group: ContactGroup }) {
+function GroupBadge({ group }: { group: { name: string; color: string } }) {
   return (
     <span className="flex items-center gap-1">
       <span
@@ -312,11 +291,13 @@ function ContactForm({
   groups,
   onCancel,
   onSaved,
+  onSubmit,
 }: {
   editContact: Contact | null
   groups: ContactGroup[]
   onCancel: () => void
-  onSaved: (contact: Contact, isEdit: boolean) => void
+  onSaved: () => void
+  onSubmit: (payload: ContactPayload) => Promise<Contact>
 }) {
   const isEdit = editContact !== null
   const [form, setForm]                 = useState(isEdit ? contactToForm(editContact!) : EMPTY_FORM)
@@ -334,37 +315,17 @@ function ContactForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const path = isEdit
-      ? `/api/v1/app/contacts/${editContact!.id}/`
-      : `/api/v1/app/contacts/`
-
     try {
-      const res = await apiFetch(path, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name:      form.name.trim(),
-          email:     form.email.trim() || "",
-          phone:     form.phone.trim() || "",
-          company:   form.company.trim() || "",
-          job_title: form.job_title.trim() || "",
-          group:     form.group || null,
-          notes:     form.notes.trim() || "",
-        }),
+      await onSubmit({
+        name:      form.name.trim(),
+        email:     form.email.trim() || "",
+        phone:     form.phone.trim() || "",
+        company:   form.company.trim() || "",
+        job_title: form.job_title.trim() || "",
+        group:     form.group || null,
+        notes:     form.notes.trim() || "",
       })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        const msg =
-          body?.detail ??
-          body?.name?.[0] ??
-          body?.email?.[0] ??
-          `HTTP ${res.status}`
-        throw new Error(msg)
-      }
-
-      const saved: Contact = await res.json()
-      onSaved(saved, isEdit)
+      onSaved()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error al guardar contacto")
     } finally {
@@ -495,12 +456,10 @@ function ContactForm({
 export default function ContactsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  const [contacts, setContacts]     = useState<Contact[]>([])
-  const [groups, setGroups]         = useState<ContactGroup[]>([])
-  const [isLoading, setIsLoading]   = useState(false)
-  const [error, setError]           = useState<string | null>(null)
-  const [search, setSearch]         = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const debouncedSearch               = useDebouncedValue(searchInput, 350)
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new contact | Contact = edit
   const [formTarget, setFormTarget] = useState<Contact | null | undefined>(undefined)
@@ -509,101 +468,64 @@ export default function ContactsPanel() {
   const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
 
   const showForm = formTarget !== undefined
+  const listRef  = useRef<HTMLDivElement>(null)
 
-  const fetchGroups = useCallback(async () => {
-    if (!isAuthenticated) return
-    try {
-      const res = await apiFetch("/api/v1/app/contacts/groups/")
-      if (!res.ok) return
-      const data = await res.json()
-      setGroups(data.groups ?? data.results ?? [])
-    } catch {
-      // silent — groups are optional for filter UI
-    }
-  }, [isAuthenticated])
+  const { contacts, pagination, isLoading, error, refetch: refetchContacts } =
+    useContacts({ group: activeGroup, search: debouncedSearch, page })
+  const { groups, refetch: refetchGroups } = useContactGroups()
 
-  const fetchContacts = useCallback(async () => {
-    if (!isAuthenticated) return
-    setIsLoading(true)
-    setError(null)
-    try {
-      const res = await apiFetch("/api/v1/app/contacts/")
-      if (!res.ok) {
-        const body = await res.text().catch(() => "(sin body)")
-        console.error("[ContactsPanel] HTTP error body:", body)
-        throw new Error(`HTTP ${res.status} ${res.statusText}`)
-      }
-      const data = await res.json()
-      const list: Contact[] = data.contacts ?? data.results ?? []
-      setContacts(list)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al cargar contactos"
-      console.error("[ContactsPanel] fetch error:", err)
-      setError(msg)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [isAuthenticated])
+  const mutations = useContactMutations(() => {
+    refetchContacts()
+    refetchGroups()
+  })
 
+  // Reset to page 1 when filters change
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchGroups()
-      fetchContacts()
-    } else {
-      setContacts([])
-      setGroups([])
-      setError(null)
-      setFormTarget(undefined)
-    }
-  }, [isAuthenticated, fetchGroups, fetchContacts])
+    setPage(1)
+  }, [activeGroup, debouncedSearch])
 
-  function handleSaved(contact: Contact, isEdit: boolean) {
-    if (isEdit) {
-      setContacts((prev) => prev.map((c) => (c.id === contact.id ? contact : c)))
-    } else {
-      setContacts((prev) => [contact, ...prev])
+  // Reset scroll position when the page changes
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  // Fallback if the current page becomes empty (e.g. deleted the last contact on it)
+  useEffect(() => {
+    if (!isLoading && pagination.total > 0 && contacts.length === 0 && page > 1) {
+      setPage(1)
     }
+  }, [isLoading, pagination.total, contacts, page])
+
+  function handleSaved() {
     setFormTarget(undefined)
   }
 
+  async function handleFormSubmit(payload: ContactPayload) {
+    return formTarget ? mutations.update(formTarget.id, payload) : mutations.create(payload)
+  }
+
   async function handleDelete(id: string) {
-    try {
-      const res = await apiFetch(`/api/v1/app/contacts/${id}/`, { method: "DELETE" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setContacts((prev) => prev.filter((c) => c.id !== id))
-      if (expandedId === id) setExpandedId(null)
-    } catch (err) {
-      console.error("[ContactsPanel] delete error:", err)
-    }
+    const ok = await mutations.remove(id)
+    if (!ok) return
+    if (expandedId === id) setExpandedId(null)
   }
 
   function toggleFormOrClose() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
-  // Groups present in the current contact list (for filter pills)
-  const presentGroups = useMemo(() => {
-    const ids = new Set(contacts.map((c) => c.group?.id).filter(Boolean))
-    return groups.filter((g) => ids.has(g.id))
-  }, [contacts, groups])
+  function handleRefresh() {
+    refetchContacts()
+    refetchGroups()
+  }
 
-  // Filtered + sorted (alphabetical by name)
-  const filtered = useMemo(() => {
-    let list = contacts
-    if (activeGroup) {
-      list = list.filter((c) => c.group?.id === activeGroup)
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.email?.toLowerCase().includes(q) ||
-          c.company?.toLowerCase().includes(q)
-      )
-    }
-    return [...list].sort((a, b) => a.name.localeCompare(b.name))
-  }, [contacts, activeGroup, search])
+  // Groups with at least one contact, based on server-side contacts_count
+  const presentGroups = useMemo(
+    () => groups.filter((g) => g.contacts_count > 0),
+    [groups]
+  )
+
+  const hasActiveFilters = Boolean(activeGroup || debouncedSearch.trim())
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -624,7 +546,7 @@ export default function ContactsPanel() {
   }
 
   function handleBulkShare() {
-    const selected = filtered
+    const selected = contacts
       .filter((c) => selectedIds.has(c.id))
       .map((c) => ({ id: c.id, title: c.name }))
     setShareResources(selected)
@@ -652,10 +574,10 @@ export default function ContactsPanel() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Contactos</h2>
           <div className="flex items-center gap-1">
-            {!isLoading && !error && contacts.length > 0 && (
-              <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            {!isLoading && !error && pagination.total > 0 && (
+              <span className="text-xs text-gray-500 mr-1">{pagination.total}</span>
             )}
-            {!isLoading && !error && contacts.length > 0 && (
+            {!isLoading && !error && pagination.total > 0 && (
               <button
                 onClick={toggleSelectionMode}
                 className={`rounded p-1 transition-colors ${
@@ -680,7 +602,7 @@ export default function ContactsPanel() {
               {showForm && formTarget === null ? <X size={13} /> : <Plus size={13} />}
             </button>
             <button
-              onClick={fetchContacts}
+              onClick={handleRefresh}
               disabled={isLoading}
               className="rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40"
               title="Actualizar"
@@ -712,24 +634,25 @@ export default function ContactsPanel() {
           groups={groups}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
+          onSubmit={handleFormSubmit}
         />
       )}
 
       {/* Search + group filter pills */}
-      {!isLoading && !error && contacts.length > 0 && (
+      {!isLoading && !error && (pagination.total > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Buscar contactos…"
               className="w-full rounded bg-white/5 border border-white/10 pl-6 pr-6 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors"
             />
-            {search && (
+            {searchInput && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-1.5 text-gray-500 hover:text-gray-300 transition-colors"
               >
                 <X size={11} />
@@ -771,7 +694,7 @@ export default function ContactsPanel() {
             /api/v1/app/contacts/
           </p>
           <button
-            onClick={fetchContacts}
+            onClick={handleRefresh}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Reintentar
@@ -779,7 +702,7 @@ export default function ContactsPanel() {
         </div>
       )}
 
-      {!isLoading && !error && contacts.length === 0 && (
+      {!isLoading && !error && !hasActiveFilters && pagination.total === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <Users size={32} className="text-gray-600" />
           <p className="text-sm text-gray-400">No tienes contactos aún</p>
@@ -792,16 +715,16 @@ export default function ContactsPanel() {
         </div>
       )}
 
-      {!isLoading && !error && contacts.length > 0 && filtered.length === 0 && (
+      {!isLoading && !error && hasActiveFilters && contacts.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center">
           <Search size={24} className="text-gray-600" />
           <p className="text-sm text-gray-400">Sin resultados</p>
         </div>
       )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {filtered.map((contact) => (
+      {!isLoading && !error && contacts.length > 0 && (
+        <div ref={listRef} className="flex-1 overflow-y-auto p-2">
+          {contacts.map((contact) => (
             <ContactItem
               key={contact.id}
               contact={contact}
@@ -817,6 +740,13 @@ export default function ContactsPanel() {
           ))}
         </div>
       )}
+
+      <Pagination
+        page={pagination.page}
+        perPage={pagination.per_page}
+        total={pagination.total}
+        onPageChange={setPage}
+      />
     </div>
   )
 }

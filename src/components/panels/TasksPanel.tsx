@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Lock, CheckSquare, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -6,71 +6,16 @@ import {
   Calendar, User,
 } from "lucide-react"
 import { useAuthStore } from "../../store/authStore"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-type TaskStatus   = "todo" | "in_progress" | "review" | "done"
-type TaskPriority = "low" | "medium" | "high" | "urgent"
-
-interface Task {
-  id: string
-  title: string
-  description: string
-  status: TaskStatus
-  priority: TaskPriority
-  due_date: string | null
-  board_id: string
-  assignee_name: string | null
-  subtasks_count: number
-  created_at: string
-  updated_at: string
-}
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const STATUSES: { value: TaskStatus; label: string }[] = [
-  { value: "todo",        label: "Por hacer"   },
-  { value: "in_progress", label: "En progreso" },
-  { value: "review",      label: "En revisión" },
-  { value: "done",        label: "Hecho"       },
-]
-
-const PRIORITIES: { value: TaskPriority; label: string }[] = [
-  { value: "low",    label: "Baja"     },
-  { value: "medium", label: "Media"    },
-  { value: "high",   label: "Alta"     },
-  { value: "urgent", label: "Urgente"  },
-]
-
-const STATUS_STYLES: Record<TaskStatus, string> = {
-  todo:        "bg-gray-700/60 text-gray-300",
-  in_progress: "bg-blue-900/50 text-blue-300",
-  review:      "bg-purple-900/50 text-purple-300",
-  done:        "bg-green-900/50 text-green-300",
-}
-
-const PRIORITY_STYLES: Record<TaskPriority, string> = {
-  low:    "bg-gray-700/50 text-gray-400",
-  medium: "bg-yellow-900/40 text-yellow-300",
-  high:   "bg-orange-900/40 text-orange-300",
-  urgent: "bg-red-900/50 text-red-300",
-}
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo:        "Por hacer",
-  in_progress: "En progreso",
-  review:      "En revisión",
-  done:        "Hecho",
-}
-
-const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low:    "Baja",
-  medium: "Media",
-  high:   "Alta",
-  urgent: "Urgente",
-}
+import {
+  STATUSES, PRIORITIES, STATUS_STYLES, PRIORITY_STYLES, STATUS_LABELS, PRIORITY_LABELS,
+} from "../../features/tasks/types"
+import type { Task, TaskStatus, TaskPriority } from "../../features/tasks/types"
+import { useTaskMutations } from "../../features/tasks/hooks/useTaskMutations"
+import type { TaskPayload } from "../../features/tasks/hooks/useTaskMutations"
+import { useTasks } from "../../features/tasks/hooks/useTasks"
+import { useTaskStatusCounts } from "../../features/tasks/hooks/useTaskStatusCounts"
+import { useDebouncedValue } from "../../features/search/hooks/useDebouncedValue"
+import Pagination from "../shared/Pagination"
 
 function formatDate(iso: string | null): string | null {
   if (!iso) return null
@@ -293,14 +238,12 @@ function TaskForm({
   editTask,
   onCancel,
   onSaved,
-  accessToken,
-  tenantSlug,
+  onSubmit,
 }: {
   editTask: Task | null
   onCancel: () => void
-  onSaved: (task: Task, isEdit: boolean) => void
-  accessToken: string
-  tenantSlug: string
+  onSaved: () => void
+  onSubmit: (payload: TaskPayload) => Promise<Task>
 }) {
   const isEdit = editTask !== null
   const [form, setForm]                 = useState(isEdit ? taskToForm(editTask!) : EMPTY_FORM)
@@ -318,36 +261,15 @@ function TaskForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = isEdit
-      ? `${apiBase}/api/v1/app/tasks/${editTask!.id}/`
-      : `${apiBase}/api/v1/app/tasks/`
-
     try {
-      const res = await fetch(url, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-          "Content-Type":  "application/json",
-        },
-        body: JSON.stringify({
-          title:       form.title.trim(),
-          status:      form.status,
-          priority:    form.priority,
-          description: form.description.trim(),
-          due_date:    form.due_date || null,
-        }),
+      await onSubmit({
+        title:       form.title.trim(),
+        status:      form.status,
+        priority:    form.priority,
+        description: form.description.trim(),
+        due_date:    form.due_date || null,
       })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        const msg = body?.detail ?? body?.title?.[0] ?? `HTTP ${res.status}`
-        throw new Error(msg)
-      }
-
-      const saved: Task = await res.json()
-      onSaved(saved, isEdit)
+      onSaved()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error al guardar tarea")
     } finally {
@@ -458,96 +380,56 @@ function TaskForm({
 // ---------------------------------------------------------------------------
 export default function TasksPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const accessToken     = useAuthStore((s) => s.accessToken)
-  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
-  const [tasks, setTasks]           = useState<Task[]>([])
-  const [isLoading, setIsLoading]   = useState(false)
-  const [error, setError]           = useState<string | null>(null)
-  const [search, setSearch]         = useState("")
+  const [searchInput, setSearchInput]   = useState("")
+  const debouncedSearch                 = useDebouncedValue(searchInput, 350)
   const [activeStatus, setActiveStatus] = useState<TaskStatus | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [page, setPage]                 = useState(1)
+  const [expandedId, setExpandedId]     = useState<string | null>(null)
   // undefined = form closed | null = new task | Task = edit mode
-  const [formTarget, setFormTarget] = useState<Task | null | undefined>(undefined)
+  const [formTarget, setFormTarget]     = useState<Task | null | undefined>(undefined)
 
   const showForm = formTarget !== undefined
+  const listRef  = useRef<HTMLDivElement>(null)
 
-  const fetchTasks = useCallback(async () => {
-    if (!accessToken || !tenantSlug) {
-      console.warn("[TasksPanel] fetchTasks called without accessToken or tenantSlug")
-      return
-    }
-    setIsLoading(true)
-    setError(null)
+  const { tasks, pagination, isLoading, error, refetch: refetchTasks } =
+    useTasks({ status: activeStatus, search: debouncedSearch, page })
+  const { counts, refetch: refetchCounts } = useTaskStatusCounts(debouncedSearch)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = `${apiBase}/api/v1/app/tasks/`
-    console.log("[TasksPanel] fetching →", url)
+  const mutations = useTaskMutations(() => {
+    refetchTasks()
+    refetchCounts()
+  })
 
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      console.log("[TasksPanel] response status:", res.status, res.statusText)
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "(sin body)")
-        console.error("[TasksPanel] HTTP error body:", body)
-        throw new Error(`HTTP ${res.status} ${res.statusText}`)
-      }
-
-      const data = await res.json()
-      const list: Task[] = data.tasks ?? data.results ?? []
-      console.log("[TasksPanel] tasks count:", list.length)
-      setTasks(list)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al cargar tareas"
-      console.error("[TasksPanel] fetch error:", err)
-      setError(msg)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [accessToken, tenantSlug])
-
+  // Reset to page 1 when filters change
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchTasks()
-    } else {
-      setTasks([])
-      setError(null)
-      setFormTarget(undefined)
-    }
-  }, [isAuthenticated, fetchTasks])
+    setPage(1)
+  }, [activeStatus, debouncedSearch])
 
-  function handleSaved(task: Task, isEdit: boolean) {
-    if (isEdit) {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)))
-    } else {
-      setTasks((prev) => [task, ...prev])
+  // Reset scroll position when the page changes
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  // Fallback if the current page becomes empty (e.g. deleted the last task on it)
+  useEffect(() => {
+    if (!isLoading && pagination.total > 0 && tasks.length === 0 && page > 1) {
+      setPage(1)
     }
+  }, [isLoading, pagination.total, tasks.length, page])
+
+  function handleSaved() {
     setFormTarget(undefined)
   }
 
+  async function handleFormSubmit(payload: TaskPayload) {
+    return formTarget ? mutations.update(formTarget.id, payload) : mutations.create(payload)
+  }
+
   async function handleDelete(id: string) {
-    if (!accessToken || !tenantSlug) return
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    try {
-      const res = await fetch(`${apiBase}/api/v1/app/tasks/${id}/`, {
-        method: "DELETE",
-        headers: {
-          Authorization:   `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setTasks((prev) => prev.filter((t) => t.id !== id))
-      if (expandedId === id) setExpandedId(null)
-    } catch (err) {
-      console.error("[TasksPanel] delete error:", err)
-    }
+    const ok = await mutations.remove(id)
+    if (!ok) return
+    if (expandedId === id) setExpandedId(null)
   }
 
   function openEditForm(task: Task) {
@@ -559,41 +441,17 @@ export default function TasksPanel() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
-  // Unique statuses present in the list (for filter pills)
-  const presentStatuses = useMemo(() => {
-    const set = new Set(tasks.map((t) => t.status))
-    return STATUSES.filter((s) => set.has(s.value))
-  }, [tasks])
-
-  // Filtered list
-  const filtered = useMemo(() => {
-    let list = tasks
-    if (activeStatus) {
-      list = list.filter((t) => t.status === activeStatus)
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.description?.toLowerCase().includes(q) ||
-          t.assignee_name?.toLowerCase().includes(q)
-      )
-    }
-    return list
-  }, [tasks, activeStatus, search])
-
-  // Count by status for header summary
-  const countByStatus = useMemo(() => {
-    const map: Partial<Record<TaskStatus, number>> = {}
-    for (const t of tasks) {
-      map[t.status] = (map[t.status] ?? 0) + 1
-    }
-    return map
-  }, [tasks])
+  // Statuses with at least one task (for filter pills), based on server-side counts
+  const presentStatuses = STATUSES.filter((s) => (counts[s.value] ?? 0) > 0)
+  const hasAnyTasks = Object.values(counts).some((c) => (c ?? 0) > 0) || pagination.total > 0
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
+  }
+
+  function handleRefresh() {
+    refetchTasks()
+    refetchCounts()
   }
 
   if (!isAuthenticated) {
@@ -612,8 +470,8 @@ export default function TasksPanel() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Tareas</h2>
           <div className="flex items-center gap-1">
-            {!isLoading && !error && tasks.length > 0 && (
-              <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            {!isLoading && !error && pagination.total > 0 && (
+              <span className="text-xs text-gray-500 mr-1">{pagination.total}</span>
             )}
             <button
               onClick={toggleFormOrClose}
@@ -627,7 +485,7 @@ export default function TasksPanel() {
               {showForm && formTarget === null ? <X size={13} /> : <Plus size={13} />}
             </button>
             <button
-              onClick={fetchTasks}
+              onClick={handleRefresh}
               disabled={isLoading}
               className="rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40"
               title="Actualizar"
@@ -638,10 +496,10 @@ export default function TasksPanel() {
         </div>
 
         {/* Status summary pills (when there are tasks) */}
-        {!isLoading && !error && tasks.length > 0 && (
+        {!isLoading && !error && hasAnyTasks && (
           <div className="flex gap-1.5 mt-2 flex-wrap">
             {STATUSES.map((s) => {
-              const count = countByStatus[s.value] ?? 0
+              const count = counts[s.value] ?? 0
               if (!count) return null
               return (
                 <span key={s.value} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLES[s.value]}`}>
@@ -654,32 +512,31 @@ export default function TasksPanel() {
       </header>
 
       {/* Create / Edit form */}
-      {showForm && accessToken && tenantSlug && (
+      {showForm && (
         <TaskForm
           editTask={formTarget ?? null}
-          accessToken={accessToken}
-          tenantSlug={tenantSlug}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
+          onSubmit={handleFormSubmit}
         />
       )}
 
       {/* Search + status filter pills */}
-      {!isLoading && !error && tasks.length > 0 && (
+      {!isLoading && !error && hasAnyTasks && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           {/* Search */}
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Buscar tareas…"
               className="w-full rounded bg-white/5 border border-white/10 pl-6 pr-6 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors"
             />
-            {search && (
+            {searchInput && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-1.5 text-gray-500 hover:text-gray-300 transition-colors"
               >
                 <X size={11} />
@@ -718,7 +575,7 @@ export default function TasksPanel() {
             {import.meta.env.VITE_API_URL ?? "http://rbac.local.test"}/api/v1/app/tasks/
           </p>
           <button
-            onClick={fetchTasks}
+            onClick={handleRefresh}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Reintentar
@@ -726,7 +583,7 @@ export default function TasksPanel() {
         </div>
       )}
 
-      {!isLoading && !error && tasks.length === 0 && (
+      {!isLoading && !error && pagination.total === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <CheckSquare size={32} className="text-gray-600" />
           <p className="text-sm text-gray-400">No tienes tareas aún</p>
@@ -739,16 +596,16 @@ export default function TasksPanel() {
         </div>
       )}
 
-      {!isLoading && !error && tasks.length > 0 && filtered.length === 0 && (
+      {!isLoading && !error && pagination.total > 0 && tasks.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center">
           <Search size={24} className="text-gray-600" />
           <p className="text-sm text-gray-400">Sin resultados</p>
         </div>
       )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {filtered.map((task) => (
+      {!isLoading && !error && tasks.length > 0 && (
+        <div ref={listRef} className="flex-1 overflow-y-auto p-2">
+          {tasks.map((task) => (
             <TaskItem
               key={task.id}
               task={task}
@@ -760,6 +617,13 @@ export default function TasksPanel() {
           ))}
         </div>
       )}
+
+      <Pagination
+        page={pagination.page}
+        perPage={pagination.per_page}
+        total={pagination.total}
+        onPageChange={setPage}
+      />
     </div>
   )
 }

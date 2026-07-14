@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import {
   Lock, StickyNote, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -9,38 +9,15 @@ import { useAuthStore } from "../../store/authStore"
 import { apiFetch } from "../../lib/apiFetch"
 import { ShareBlock } from "../shared/ShareBlock"
 import { BulkSelectBar } from "../shared/BulkSelectBar"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-interface NoteCategory {
-  id: string
-  name: string
-  color: string
-  notes_count: number
-}
-
-interface Note {
-  id: string
-  title: string
-  content: string
-  category: NoteCategory | null
-  is_pinned: boolean
-  color: string
-  tags: string[]
-  is_shared: boolean
-  shared_by_name: string | null
-  created_at: string
-  updated_at: string
-}
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const CATEGORY_COLOR_PRESETS = [
-  "#2563eb", "#16a34a", "#dc2626", "#9333ea",
-  "#d97706", "#0891b2", "#db2777", "#65a30d",
-]
+import { CATEGORY_COLOR_PRESETS } from "../../features/notes/types"
+import type { Note, NoteCategory } from "../../features/notes/types"
+import { useNotes } from "../../features/notes/hooks/useNotes"
+import { useNoteCategories } from "../../features/notes/hooks/useNoteCategories"
+import { useNoteTags } from "../../features/notes/hooks/useNoteTags"
+import { useNoteMutations } from "../../features/notes/hooks/useNoteMutations"
+import type { NotePayload } from "../../features/notes/hooks/useNoteMutations"
+import { useDebouncedValue } from "../../features/search/hooks/useDebouncedValue"
+import Pagination from "../shared/Pagination"
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es", {
@@ -307,12 +284,14 @@ function NoteForm({
   editNote,
   onCancel,
   onSaved,
+  onSubmit,
   categories,
   tagSuggestions,
 }: {
   editNote: Note | null
   onCancel: () => void
-  onSaved: (note: Note, isEdit: boolean) => void
+  onSaved: () => void
+  onSubmit: (payload: NotePayload) => Promise<Note>
   categories: NoteCategory[]
   tagSuggestions: string[]
 }) {
@@ -362,36 +341,20 @@ function NoteForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const path = isEdit
-      ? `/api/v1/app/notes/${editNote!.id}/`
-      : `/api/v1/app/notes/`
-
     const tags = form.tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
 
     try {
-      const res = await apiFetch(path, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title:     form.title.trim(),
-          content:   form.content.trim(),
-          category:  form.category || null,
-          is_pinned: form.is_pinned,
-          tags,
-        }),
+      await onSubmit({
+        title:     form.title.trim(),
+        content:   form.content.trim(),
+        category:  form.category || null,
+        is_pinned: form.is_pinned,
+        tags,
       })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        const msg = body?.detail ?? body?.title?.[0] ?? `HTTP ${res.status}`
-        throw new Error(msg)
-      }
-
-      const saved: Note = await res.json()
-      onSaved(saved, isEdit)
+      onSaved()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error al guardar nota")
     } finally {
@@ -711,13 +674,11 @@ function CategoryManager({
 export default function NotesPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  const [notes, setNotes]           = useState<Note[]>([])
-  const [categories, setCategories] = useState<NoteCategory[]>([])
-  const [isLoading, setIsLoading]   = useState(false)
-  const [error, setError]           = useState<string | null>(null)
-  const [search, setSearch]         = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const debouncedSearch               = useDebouncedValue(searchInput, 350)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // undefined = closed | null = new note | Note = edit mode
   const [formTarget, setFormTarget] = useState<Note | null | undefined>(undefined)
@@ -727,87 +688,60 @@ export default function NotesPanel() {
   const [showCategoryManager, setShowCategoryManager] = useState(false)
 
   const showForm = formTarget !== undefined
+  const listRef  = useRef<HTMLDivElement>(null)
 
-  const fetchNotes = useCallback(async () => {
-    if (!isAuthenticated) return
-    setIsLoading(true)
-    setError(null)
+  const { notes, pagination, isLoading, error, refetch: refetchNotes } =
+    useNotes({ category: activeCategory, tag: activeTag, search: debouncedSearch, page })
+  const { categories, refetch: refetchCategories } = useNoteCategories()
+  const { tags, refetch: refetchTags } = useNoteTags()
 
-    try {
-      const res = await apiFetch("/api/v1/app/notes/")
+  const mutations = useNoteMutations(() => {
+    refetchNotes()
+    refetchCategories()
+    refetchTags()
+  })
 
-      if (!res.ok) {
-        const body = await res.text().catch(() => "(sin body)")
-        console.error("[NotesPanel] HTTP error body:", body)
-        throw new Error(`HTTP ${res.status} ${res.statusText}`)
-      }
-
-      const data = await res.json()
-      const list: Note[] = data.notes ?? data.results ?? []
-      setNotes(list)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al cargar notas"
-      console.error("[NotesPanel] fetch error:", err)
-      setError(msg)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [isAuthenticated])
-
-  const fetchCategories = useCallback(async () => {
-    if (!isAuthenticated) return
-    try {
-      const res = await apiFetch("/api/v1/app/notes/categories/")
-      if (!res.ok) return
-      const data = await res.json()
-      setCategories(data.categories ?? data.results ?? [])
-    } catch {
-      // silent — categories are optional for filter/form UI
-    }
-  }, [isAuthenticated])
-
+  // Reset to page 1 when filters change
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchNotes()
-      fetchCategories()
-    } else {
-      setNotes([])
-      setCategories([])
-      setError(null)
-      setFormTarget(undefined)
-    }
-  }, [isAuthenticated, fetchNotes, fetchCategories])
+    setPage(1)
+  }, [activeCategory, activeTag, debouncedSearch])
 
-  function handleSaved(note: Note, isEdit: boolean) {
-    if (isEdit) {
-      setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
-    } else {
-      // Pinned notes go to top, unpinned to after pinned block
-      setNotes((prev) => note.is_pinned ? [note, ...prev] : [...prev, note])
+  // Reset scroll position when the page changes
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  // Notes with is_pinned=true are always returned in full on every page;
+  // pagination.total only counts non-pinned notes.
+  const pinnedCount = useMemo(() => notes.filter((n) => n.is_pinned).length, [notes])
+  const headerCount = pinnedCount + pagination.total
+
+  // Fallback if the current page's non-pinned block becomes empty
+  // (e.g. deleted the last non-pinned note on it). notes.length alone can't
+  // be used here since pinned notes are always present.
+  useEffect(() => {
+    const unpinnedInPage = notes.filter((n) => !n.is_pinned).length
+    if (!isLoading && pagination.total > 0 && unpinnedInPage === 0 && page > 1) {
+      setPage(1)
     }
+  }, [isLoading, pagination.total, notes, page])
+
+  function handleSaved() {
     setFormTarget(undefined)
   }
 
+  async function handleFormSubmit(payload: NotePayload) {
+    return formTarget ? mutations.update(formTarget.id, payload) : mutations.create(payload)
+  }
+
   async function handleDelete(id: string) {
-    try {
-      const res = await apiFetch(`/api/v1/app/notes/${id}/`, { method: "DELETE" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setNotes((prev) => prev.filter((n) => n.id !== id))
-      if (expandedId === id) setExpandedId(null)
-    } catch (err) {
-      console.error("[NotesPanel] delete error:", err)
-    }
+    const ok = await mutations.remove(id)
+    if (!ok) return
+    if (expandedId === id) setExpandedId(null)
   }
 
   async function handleTogglePin(note: Note) {
-    try {
-      const res = await apiFetch(`/api/v1/app/notes/${note.id}/pin/`, { method: "PATCH" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const updated: Note = await res.json()
-      setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)))
-    } catch (err) {
-      console.error("[NotesPanel] pin toggle error:", err)
-    }
+    await mutations.togglePin(note.id)
   }
 
   function openEditForm(note: Note) {
@@ -819,59 +753,31 @@ export default function NotesPanel() {
     setFormTarget((prev) => (prev !== undefined ? undefined : null))
   }
 
-  function handleCategoryCreated(category: NoteCategory) {
-    setCategories((prev) => [...prev, category])
+  function handleCategoryCreated() {
+    refetchCategories()
   }
 
-  async function handleCategoryDeleted(id: string) {
-    setCategories((prev) => prev.filter((c) => c.id !== id))
+  function handleCategoryDeleted(id: string) {
     if (activeCategory === id) setActiveCategory(null)
     // Notes that referenced this category are set to null server-side (SET_NULL) —
-    // resync from the server instead of patching local state by hand.
-    fetchNotes()
+    // resync notes and categories from the server instead of patching local state.
+    refetchNotes()
+    refetchCategories()
   }
 
-  // Categories present in the list
-  const presentCategories = useMemo(() => {
-    const ids = new Set(notes.map((n) => n.category?.id).filter(Boolean))
-    return categories.filter((c) => ids.has(c.id))
-  }, [notes, categories])
+  function handleRefresh() {
+    refetchNotes()
+    refetchCategories()
+    refetchTags()
+  }
 
-  // Distinct tags present in the list (used for both the tag filter and
-  // the tag autocomplete in NoteForm — no separate API call needed since
-  // all notes are already loaded client-side).
-  const allTags = useMemo(() => {
-    const set = new Set<string>()
-    notes.forEach((n) => n.tags?.forEach((t) => set.add(t)))
-    return Array.from(set).sort()
-  }, [notes])
+  // Categories with at least one note, based on server-side notes_count
+  const presentCategories = useMemo(
+    () => categories.filter((c) => c.notes_count > 0),
+    [categories]
+  )
 
-  // Filtered + sorted list (pinned first)
-  const filtered = useMemo(() => {
-    let list = notes
-    if (activeCategory) {
-      list = list.filter((n) => n.category?.id === activeCategory)
-    }
-    if (activeTag) {
-      list = list.filter((n) => n.tags?.includes(activeTag))
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (n) =>
-          n.title.toLowerCase().includes(q) ||
-          n.content?.toLowerCase().includes(q) ||
-          n.tags?.some((t) => t.toLowerCase().includes(q))
-      )
-    }
-    // pinned first
-    return [...list].sort((a, b) => {
-      if (a.is_pinned === b.is_pinned) return 0
-      return a.is_pinned ? -1 : 1
-    })
-  }, [notes, activeCategory, activeTag, search])
-
-  const pinnedCount = useMemo(() => notes.filter((n) => n.is_pinned).length, [notes])
+  const hasActiveFilters = Boolean(activeCategory || activeTag || debouncedSearch.trim())
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -892,7 +798,7 @@ export default function NotesPanel() {
   }
 
   function handleBulkShare() {
-    const selected = filtered
+    const selected = notes
       .filter((n) => selectedIds.has(n.id))
       .map((n) => ({ id: n.id, title: n.title }))
     setShareResources(selected)
@@ -920,10 +826,10 @@ export default function NotesPanel() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Notas</h2>
           <div className="flex items-center gap-1">
-            {!isLoading && !error && notes.length > 0 && (
-              <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            {!isLoading && !error && headerCount > 0 && (
+              <span className="text-xs text-gray-500 mr-1">{headerCount}</span>
             )}
-            {!isLoading && !error && notes.length > 0 && (
+            {!isLoading && !error && headerCount > 0 && (
               <button
                 onClick={toggleSelectionMode}
                 className={`rounded p-1 transition-colors ${
@@ -959,7 +865,7 @@ export default function NotesPanel() {
               {showForm && formTarget === null ? <X size={13} /> : <Plus size={13} />}
             </button>
             <button
-              onClick={fetchNotes}
+              onClick={handleRefresh}
               disabled={isLoading}
               className="rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40"
               title="Actualizar"
@@ -970,7 +876,7 @@ export default function NotesPanel() {
         </div>
 
         {/* Summary */}
-        {!isLoading && !error && notes.length > 0 && pinnedCount > 0 && (
+        {!isLoading && !error && headerCount > 0 && pinnedCount > 0 && (
           <div className="flex items-center gap-1 mt-1.5">
             <Pin size={10} className="text-yellow-400" />
             <span className="text-[10px] text-yellow-400/80">{pinnedCount} fijada{pinnedCount !== 1 ? "s" : ""}</span>
@@ -1009,25 +915,26 @@ export default function NotesPanel() {
           categories={categories}
           onCancel={() => setFormTarget(undefined)}
           onSaved={handleSaved}
-          tagSuggestions={allTags}
+          onSubmit={handleFormSubmit}
+          tagSuggestions={tags}
         />
       )}
 
       {/* Search + category filter */}
-      {!isLoading && !error && notes.length > 0 && (
+      {!isLoading && !error && (headerCount > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Buscar notas…"
               className="w-full rounded bg-white/5 border border-white/10 pl-6 pr-6 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors"
             />
-            {search && (
+            {searchInput && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-1.5 text-gray-500 hover:text-gray-300 transition-colors"
               >
                 <X size={11} />
@@ -1061,9 +968,9 @@ export default function NotesPanel() {
             </div>
           )}
 
-          {allTags.length >= 2 && (
+          {tags.length >= 2 && (
             <div className="flex flex-wrap gap-1">
-              {allTags.map((tag) => (
+              {tags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
@@ -1091,7 +998,7 @@ export default function NotesPanel() {
             {import.meta.env.VITE_API_URL ?? "http://rbac.local.test"}/api/v1/app/notes/
           </p>
           <button
-            onClick={fetchNotes}
+            onClick={handleRefresh}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Reintentar
@@ -1099,7 +1006,7 @@ export default function NotesPanel() {
         </div>
       )}
 
-      {!isLoading && !error && notes.length === 0 && (
+      {!isLoading && !error && !hasActiveFilters && headerCount === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <StickyNote size={32} className="text-gray-600" />
           <p className="text-sm text-gray-400">No tienes notas aún</p>
@@ -1112,16 +1019,16 @@ export default function NotesPanel() {
         </div>
       )}
 
-      {!isLoading && !error && notes.length > 0 && filtered.length === 0 && (
+      {!isLoading && !error && hasActiveFilters && notes.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center">
           <Search size={24} className="text-gray-600" />
           <p className="text-sm text-gray-400">Sin resultados</p>
         </div>
       )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {filtered.map((note) => (
+      {!isLoading && !error && notes.length > 0 && (
+        <div ref={listRef} className="flex-1 overflow-y-auto p-2">
+          {notes.map((note) => (
             <NoteItem
               key={note.id}
               note={note}
@@ -1138,6 +1045,13 @@ export default function NotesPanel() {
           ))}
         </div>
       )}
+
+      <Pagination
+        page={pagination.page}
+        perPage={pagination.per_page}
+        total={pagination.total}
+        onPageChange={setPage}
+      />
     </div>
   )
 }

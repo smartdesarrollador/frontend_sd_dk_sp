@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Lock, Clipboard, Check, Code2, AlertCircle,
   Search, X, ChevronDown, ChevronRight, RefreshCw,
@@ -7,45 +7,14 @@ import {
 import { useAuthStore } from "../../store/authStore"
 import { ShareBlock } from "../shared/ShareBlock"
 import { BulkSelectBar } from "../shared/BulkSelectBar"
-
-interface Snippet {
-  id: string
-  title: string
-  description: string
-  code: string
-  language: string
-  tags: string[]
-  is_shared: boolean
-  shared_by_name: string | null
-  created_at: string
-}
-
-const LANGUAGES = [
-  "javascript", "typescript", "python", "bash", "sql",
-  "html", "css", "json", "yaml", "dockerfile",
-  "go", "rust", "java", "other",
-] as const
-
-const LANG_COLORS: Record<string, string> = {
-  javascript: "bg-yellow-900/40 text-yellow-300",
-  typescript: "bg-blue-900/40 text-blue-300",
-  python:     "bg-green-900/40 text-green-300",
-  bash:       "bg-gray-700/60 text-gray-200",
-  sql:        "bg-orange-900/40 text-orange-300",
-  html:       "bg-red-900/40 text-red-300",
-  css:        "bg-purple-900/40 text-purple-300",
-  json:       "bg-teal-900/40 text-teal-300",
-  yaml:       "bg-teal-900/40 text-teal-300",
-  dockerfile: "bg-sky-900/40 text-sky-300",
-  go:         "bg-cyan-900/40 text-cyan-300",
-  rust:       "bg-orange-900/40 text-orange-300",
-  java:       "bg-red-900/40 text-red-300",
-  other:      "bg-gray-700/60 text-gray-300",
-}
-
-function langColor(language: string): string {
-  return LANG_COLORS[language.toLowerCase()] ?? LANG_COLORS.other
-}
+import { LANGUAGES, langColor } from "../../features/snippets/types"
+import type { Snippet } from "../../features/snippets/types"
+import { useSnippets } from "../../features/snippets/hooks/useSnippets"
+import { useSnippetTags } from "../../features/snippets/hooks/useSnippetTags"
+import { useSnippetMutations } from "../../features/snippets/hooks/useSnippetMutations"
+import type { SnippetPayload } from "../../features/snippets/hooks/useSnippetMutations"
+import { useDebouncedValue } from "../../features/search/hooks/useDebouncedValue"
+import Pagination from "../shared/Pagination"
 
 // ---------------------------------------------------------------------------
 // SnippetItem
@@ -274,15 +243,13 @@ function SnippetForm({
   editSnippet,
   onCancel,
   onSaved,
-  accessToken,
-  tenantSlug,
+  onSubmit,
   tagSuggestions,
 }: {
   editSnippet: Snippet | null
   onCancel: () => void
-  onSaved: (snippet: Snippet, isEdit: boolean) => void
-  accessToken: string
-  tenantSlug: string
+  onSaved: () => void
+  onSubmit: (payload: SnippetPayload) => Promise<Snippet>
   tagSuggestions: string[]
 }) {
   const isEdit = editSnippet !== null
@@ -331,41 +298,20 @@ function SnippetForm({
     setIsSubmitting(true)
     setFormError(null)
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
     const tags = form.tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
 
-    const url = isEdit
-      ? `${apiBase}/api/v1/app/snippets/${editSnippet!.id}/`
-      : `${apiBase}/api/v1/app/snippets/`
-
     try {
-      const res = await fetch(url, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: form.title.trim(),
-          code: form.code.trim(),
-          language: form.language,
-          description: form.description.trim(),
-          tags,
-        }),
+      await onSubmit({
+        title: form.title.trim(),
+        code: form.code.trim(),
+        language: form.language,
+        description: form.description.trim(),
+        tags,
       })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        const msg = body?.detail ?? body?.title?.[0] ?? body?.code?.[0] ?? `HTTP ${res.status}`
-        throw new Error(msg)
-      }
-
-      const saved: Snippet = await res.json()
-      onSaved(saved, isEdit)
+      onSaved()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error al guardar snippet")
     } finally {
@@ -492,15 +438,12 @@ function SnippetForm({
 // ---------------------------------------------------------------------------
 export default function SnippetsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const accessToken     = useAuthStore((s) => s.accessToken)
-  const tenantSlug      = useAuthStore((s) => s.tenant?.slug)
 
-  const [snippets, setSnippets]     = useState<Snippet[]>([])
-  const [isLoading, setIsLoading]   = useState(false)
-  const [error, setError]           = useState<string | null>(null)
-  const [search, setSearch]         = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const debouncedSearch               = useDebouncedValue(searchInput, 350)
   const [activeLang, setActiveLang] = useState<string | null>(null)
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // null = closed, undefined = new, Snippet = edit mode
   const [formTarget, setFormTarget] = useState<Snippet | null | undefined>(undefined)
@@ -509,86 +452,46 @@ export default function SnippetsPanel() {
   const [shareResources, setShareResources] = useState<{ id: string; title: string }[] | null>(null)
 
   const showForm = formTarget !== undefined
+  const listRef  = useRef<HTMLDivElement>(null)
 
-  const fetchSnippets = useCallback(async () => {
-    if (!accessToken || !tenantSlug) {
-      console.warn("[SnippetsPanel] fetchSnippets called without accessToken or tenantSlug")
-      return
-    }
-    setIsLoading(true)
-    setError(null)
+  const { snippets, pagination, isLoading, error, refetch: refetchSnippets } =
+    useSnippets({ language: activeLang, tag: activeTag, search: debouncedSearch, page })
+  const { tags, refetch: refetchTags } = useSnippetTags()
 
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    const url = `${apiBase}/api/v1/app/snippets/`
-    console.log("[SnippetsPanel] fetching →", url)
-    console.log("[SnippetsPanel] token (primeros 20 chars):", accessToken.slice(0, 20) + "…")
+  const mutations = useSnippetMutations(() => {
+    refetchSnippets()
+    refetchTags()
+  })
 
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      console.log("[SnippetsPanel] response status:", res.status, res.statusText)
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "(sin body)")
-        console.error("[SnippetsPanel] HTTP error body:", body)
-        throw new Error(`HTTP ${res.status} ${res.statusText}`)
-      }
-
-      const data = await res.json()
-      console.log("[SnippetsPanel] data keys:", Object.keys(data))
-      const list: Snippet[] = data.snippets ?? data.results ?? []
-      console.log("[SnippetsPanel] snippets count:", list.length)
-      setSnippets(list)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al cargar snippets"
-      console.error("[SnippetsPanel] fetch error:", err)
-      setError(msg)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [accessToken, tenantSlug])
-
+  // Reset to page 1 when filters change
   useEffect(() => {
-    console.log("[SnippetsPanel] isAuthenticated changed →", isAuthenticated)
-    if (isAuthenticated) {
-      fetchSnippets()
-    } else {
-      setSnippets([])
-      setError(null)
-      setFormTarget(undefined)
-    }
-  }, [isAuthenticated, fetchSnippets])
+    setPage(1)
+  }, [activeLang, activeTag, debouncedSearch])
 
-  function handleSaved(snippet: Snippet, isEdit: boolean) {
-    if (isEdit) {
-      setSnippets((prev) => prev.map((s) => (s.id === snippet.id ? snippet : s)))
-    } else {
-      setSnippets((prev) => [snippet, ...prev])
+  // Reset scroll position when the page changes
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [page])
+
+  // Fallback if the current page becomes empty (e.g. deleted the last snippet on it)
+  useEffect(() => {
+    if (!isLoading && pagination.total > 0 && snippets.length === 0 && page > 1) {
+      setPage(1)
     }
+  }, [isLoading, pagination.total, snippets, page])
+
+  function handleSaved() {
     setFormTarget(undefined)
   }
 
+  async function handleFormSubmit(payload: SnippetPayload) {
+    return formTarget ? mutations.update(formTarget.id, payload) : mutations.create(payload)
+  }
+
   async function handleDelete(id: string) {
-    if (!accessToken || !tenantSlug) return
-    const apiBase = import.meta.env.VITE_API_URL ?? "http://rbac.local.test"
-    try {
-      const res = await fetch(`${apiBase}/api/v1/app/snippets/${id}/`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Tenant-Slug": tenantSlug,
-        },
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setSnippets((prev) => prev.filter((s) => s.id !== id))
-      if (expandedId === id) setExpandedId(null)
-    } catch (err) {
-      console.error("[SnippetsPanel] delete error:", err)
-    }
+    const ok = await mutations.remove(id)
+    if (!ok) return
+    if (expandedId === id) setExpandedId(null)
   }
 
   function openNewForm() {
@@ -612,40 +515,12 @@ export default function SnippetsPanel() {
     }
   }
 
-  // Unique languages for filter pills
-  const languages = useMemo(() => {
-    return [...new Set(snippets.map((s) => s.language.toLowerCase()))].sort()
-  }, [snippets])
+  function handleRefresh() {
+    refetchSnippets()
+    refetchTags()
+  }
 
-  // Distinct tags present in the list (used for both the tag filter and
-  // the tag autocomplete in SnippetForm — no separate API call needed).
-  const allTags = useMemo(() => {
-    const set = new Set<string>()
-    snippets.forEach((s) => s.tags?.forEach((t) => set.add(t)))
-    return Array.from(set).sort()
-  }, [snippets])
-
-  // Filtered list
-  const filtered = useMemo(() => {
-    let list = snippets
-    if (activeLang) {
-      list = list.filter((s) => s.language.toLowerCase() === activeLang)
-    }
-    if (activeTag) {
-      list = list.filter((s) => s.tags?.includes(activeTag))
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.description?.toLowerCase().includes(q) ||
-          s.language.toLowerCase().includes(q) ||
-          s.tags?.some((t) => t.toLowerCase().includes(q))
-      )
-    }
-    return list
-  }, [snippets, activeLang, activeTag, search])
+  const hasActiveFilters = Boolean(activeLang || activeTag || debouncedSearch.trim())
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -666,7 +541,7 @@ export default function SnippetsPanel() {
   }
 
   function handleBulkShare() {
-    const selected = filtered
+    const selected = snippets
       .filter((s) => selectedIds.has(s.id))
       .map((s) => ({ id: s.id, title: s.title }))
     setShareResources(selected)
@@ -694,10 +569,10 @@ export default function SnippetsPanel() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">Snippets</h2>
           <div className="flex items-center gap-1">
-            {!isLoading && !error && (
-              <span className="text-xs text-gray-500 mr-1">{filtered.length}</span>
+            {!isLoading && !error && pagination.total > 0 && (
+              <span className="text-xs text-gray-500 mr-1">{pagination.total}</span>
             )}
-            {!isLoading && !error && snippets.length > 0 && (
+            {!isLoading && !error && pagination.total > 0 && (
               <button
                 onClick={toggleSelectionMode}
                 className={`rounded p-1 transition-colors ${
@@ -722,7 +597,7 @@ export default function SnippetsPanel() {
               {showForm && formTarget === null ? <X size={13} /> : <Plus size={13} />}
             </button>
             <button
-              onClick={fetchSnippets}
+              onClick={handleRefresh}
               disabled={isLoading}
               className="rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors disabled:opacity-40"
               title="Actualizar"
@@ -748,32 +623,31 @@ export default function SnippetsPanel() {
       )}
 
       {/* Create / Edit form */}
-      {showForm && accessToken && tenantSlug && (
+      {showForm && (
         <SnippetForm
           editSnippet={formTarget ?? null}
-          accessToken={accessToken}
-          tenantSlug={tenantSlug}
           onCancel={closeForm}
           onSaved={handleSaved}
-          tagSuggestions={allTags}
+          onSubmit={handleFormSubmit}
+          tagSuggestions={tags}
         />
       )}
 
       {/* Search + language filters */}
-      {!isLoading && !error && snippets.length > 0 && (
+      {!isLoading && !error && (pagination.total > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Buscar snippets…"
               className="w-full rounded bg-white/5 border border-white/10 pl-6 pr-6 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors"
             />
-            {search && (
+            {searchInput && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-1.5 text-gray-500 hover:text-gray-300 transition-colors"
               >
                 <X size={11} />
@@ -781,27 +655,25 @@ export default function SnippetsPanel() {
             )}
           </div>
 
-          {languages.length >= 2 && (
-            <div className="flex flex-wrap gap-1">
-              {languages.map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setActiveLang((prev) => (prev === lang ? null : lang))}
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase transition-colors ${
-                    activeLang === lang
-                      ? langColor(lang) + " ring-1 ring-white/30"
-                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
-                  }`}
-                >
-                  {lang}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-1">
+            {LANGUAGES.map((lang) => (
+              <button
+                key={lang}
+                onClick={() => setActiveLang((prev) => (prev === lang ? null : lang))}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase transition-colors ${
+                  activeLang === lang
+                    ? langColor(lang) + " ring-1 ring-white/30"
+                    : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
 
-          {allTags.length >= 2 && (
+          {tags.length >= 2 && (
             <div className="flex flex-wrap gap-1">
-              {allTags.map((tag) => (
+              {tags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setActiveTag((prev) => (prev === tag ? null : tag))}
@@ -829,7 +701,7 @@ export default function SnippetsPanel() {
             {import.meta.env.VITE_API_URL ?? "http://rbac.local.test"}/api/v1/app/snippets/
           </p>
           <button
-            onClick={fetchSnippets}
+            onClick={handleRefresh}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/20 transition-colors"
           >
             Reintentar
@@ -837,7 +709,7 @@ export default function SnippetsPanel() {
         </div>
       )}
 
-      {!isLoading && !error && snippets.length === 0 && (
+      {!isLoading && !error && !hasActiveFilters && pagination.total === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
           <Code2 size={32} className="text-gray-600" />
           <p className="text-sm text-gray-400">No tienes snippets aún</p>
@@ -850,16 +722,16 @@ export default function SnippetsPanel() {
         </div>
       )}
 
-      {!isLoading && !error && snippets.length > 0 && filtered.length === 0 && (
+      {!isLoading && !error && hasActiveFilters && snippets.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center">
           <Search size={24} className="text-gray-600" />
           <p className="text-sm text-gray-400">Sin resultados</p>
         </div>
       )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {filtered.map((snippet) => (
+      {!isLoading && !error && snippets.length > 0 && (
+        <div ref={listRef} className="flex-1 overflow-y-auto p-2">
+          {snippets.map((snippet) => (
             <SnippetItem
               key={snippet.id}
               snippet={snippet}
@@ -875,6 +747,13 @@ export default function SnippetsPanel() {
           ))}
         </div>
       )}
+
+      <Pagination
+        page={pagination.page}
+        perPage={pagination.per_page}
+        total={pagination.total}
+        onPageChange={setPage}
+      />
     </div>
   )
 }

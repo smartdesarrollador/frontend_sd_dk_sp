@@ -42,3 +42,16 @@ export interface UnlockResponse {
 export interface SetupResponse {
   recovery_code: string
 }
+
+export interface VaultItemsPagination {
+  page: number
+  per_page: number
+  total: number
+}
+
+export interface VaultItemsResponse {
+  items: VaultItem[]
+  pagination: VaultItemsPagination
+}
+
+export const DEFAULT_PER_PAGE = 20
