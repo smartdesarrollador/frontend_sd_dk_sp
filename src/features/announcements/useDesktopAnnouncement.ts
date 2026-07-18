@@ -20,6 +20,20 @@ function loadDismissed(): Set<string> {
   return new Set()
 }
 
+/**
+ * Normaliza la respuesta a un array de anuncios. El endpoint devuelve un array
+ * plano, pero blindamos contra otras formas (p. ej. respuesta paginada
+ * `{ results: [...] }` de DRF CursorPagination) para que un cambio en el backend
+ * nunca provoque `announcements.filter is not a function` y deje el panel en blanco.
+ */
+function toAnnouncementArray(data: unknown): DesktopAnnouncement[] {
+  if (Array.isArray(data)) return data as DesktopAnnouncement[]
+  if (data && typeof data === "object" && Array.isArray((data as { results?: unknown }).results)) {
+    return (data as { results: DesktopAnnouncement[] }).results
+  }
+  return []
+}
+
 export function useDesktopAnnouncements() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([])
@@ -30,9 +44,9 @@ export function useDesktopAnnouncements() {
     apiFetch("/api/v1/app/announcements/top/?placement=dashboard&limit=2")
       .then((res) => {
         if (!res.ok) return []
-        return res.json() as Promise<DesktopAnnouncement[]>
+        return res.json()
       })
-      .then((data) => setAnnouncements(data ?? []))
+      .then((data) => setAnnouncements(toAnnouncementArray(data)))
       .catch(() => setAnnouncements([]))
   }, [isAuthenticated])
 

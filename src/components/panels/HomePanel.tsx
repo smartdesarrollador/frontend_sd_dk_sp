@@ -17,7 +17,10 @@ import { useDesktopAnnouncements, type DesktopAnnouncement } from "../../feature
 interface HomeEvent   { id: string; title: string; start_datetime: string }
 interface HomeTask    { id: string; status: string; due_date: string | null }
 interface HomeSnippet { id: string; title: string; language: string; updated_at: string }
-interface HomeNote    { id: string; title: string; category: string; updated_at: string }
+// `category` era string; tras la gestión de categorías el backend devuelve un
+// objeto {id, name, color, notes_count} (o null). Aceptamos ambas formas.
+interface HomeNoteCategory { id: string; name: string; color: string | null; notes_count?: number }
+interface HomeNote    { id: string; title: string; category: HomeNoteCategory | string | null; updated_at: string }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const QUOTES = [
@@ -73,6 +76,20 @@ const DEFAULT_SHORTCUTS: PanelId[] = ["tasks", "notes", "calendar", "snippets"]
 const MAX_SHORTCUTS = 6
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Extrae un array de la respuesta sin importar la forma: array plano, `{results}`
+// (DRF CursorPagination) o claves específicas. Evita que una respuesta inesperada
+// del backend rompa un `.filter`/`.map` en render y deje el panel en blanco.
+function toArray<T>(data: unknown, ...keys: string[]): T[] {
+  if (Array.isArray(data)) return data as T[]
+  if (data && typeof data === "object") {
+    for (const key of [...keys, "results"]) {
+      const val = (data as Record<string, unknown>)[key]
+      if (Array.isArray(val)) return val as T[]
+    }
+  }
+  return []
+}
+
 function startOfDay(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 
 function isTodayOrTomorrow(dateStr: string): boolean {
@@ -104,6 +121,13 @@ function formatRelative(iso: string): string {
   if (diffDays === 1) return "Ayer"
   if (diffDays < 7)  return `Hace ${diffDays} días`
   return new Date(iso).toLocaleDateString("es", { day: "2-digit", month: "short" })
+}
+
+// Nunca renderizar `category` directo: si llega como objeto, React lanza
+// "Objects are not valid as a React child" y tumba el panel entero.
+function categoryLabel(category: HomeNote["category"]): string {
+  if (typeof category === "string") return category
+  return category?.name ?? "Sin categoría"
 }
 
 function getTodayKey(): string { return new Date().toISOString().slice(0, 10) }
@@ -276,20 +300,20 @@ export default function HomePanel() {
     ])
     if (calRes.status === "fulfilled" && calRes.value.ok) {
       const d = await calRes.value.json()
-      setHomeEvents(d.events ?? d.results ?? [])
+      setHomeEvents(toArray<HomeEvent>(d, "events"))
     }
     if (taskRes.status === "fulfilled" && taskRes.value.ok) {
       const d = await taskRes.value.json()
-      setHomeTasks(d.tasks ?? d.results ?? [])
+      setHomeTasks(toArray<HomeTask>(d, "tasks"))
     }
     if (snippetRes.status === "fulfilled" && snippetRes.value.ok) {
       const d = await snippetRes.value.json()
-      const items: HomeSnippet[] = d.snippets ?? d.results ?? []
+      const items = toArray<HomeSnippet>(d, "snippets")
       setLastSnippet(items[0] ?? null)
     }
     if (noteRes.status === "fulfilled" && noteRes.value.ok) {
       const d = await noteRes.value.json()
-      const items: HomeNote[] = d.notes ?? d.results ?? []
+      const items = toArray<HomeNote>(d, "notes")
       setLastNote(items[0] ?? null)
     }
     setIsLoading(false)
@@ -531,7 +555,7 @@ export default function HomePanel() {
                 <RecentCard
                   icon={StickyNote}
                   title={lastNote.title}
-                  meta={lastNote.category}
+                  meta={categoryLabel(lastNote.category)}
                   metaStyle="bg-green-900/40 text-green-300"
                   date={formatRelative(lastNote.updated_at)}
                   onClick={() => navigateTo("notes")}

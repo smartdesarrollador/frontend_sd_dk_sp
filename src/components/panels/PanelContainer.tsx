@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useSettingsStore } from "../../store/settingsStore";
 import type { PanelId } from "../../types";
+import PanelErrorBoundary from "../shared/PanelErrorBoundary";
 import HomePanel from "./HomePanel";
 import FilesPanel from "./FilesPanel";
 import ChatPanel from "./ChatPanel";
@@ -133,21 +134,29 @@ export default function PanelContainer({
         {/* Notas se mantiene siempre montado para no perder el borrador de
             "Nueva nota" al cambiar de panel y volver */}
         <div className="absolute inset-0" style={{ display: isNotesActive ? "block" : "none" }}>
-          <NotesPanel />
+          <PanelErrorBoundary resetKey="notes">
+            <NotesPanel />
+          </PanelErrorBoundary>
         </div>
         {/* Tareas se mantiene siempre montado para no perder el borrador de
             "Nueva tarea" al cambiar de panel y volver */}
         <div className="absolute inset-0" style={{ display: isTasksActive ? "block" : "none" }}>
-          <TasksPanel />
+          <PanelErrorBoundary resetKey="tasks">
+            <TasksPanel />
+          </PanelErrorBoundary>
         </div>
         {/* Snippets se mantiene siempre montado para no perder el borrador de
             "Nuevo snippet" al cambiar de panel y volver */}
         <div className="absolute inset-0" style={{ display: isSnippetsActive ? "block" : "none" }}>
-          <SnippetsPanel />
+          <PanelErrorBoundary resetKey="snippets">
+            <SnippetsPanel />
+          </PanelErrorBoundary>
         </div>
         {OtherActivePanel && (
           <div className="absolute inset-0">
-            <OtherActivePanel />
+            <PanelErrorBoundary resetKey={activePanel ?? undefined}>
+              <OtherActivePanel />
+            </PanelErrorBoundary>
           </div>
         )}
       </div>
