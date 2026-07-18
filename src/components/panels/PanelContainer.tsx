@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useSettingsStore } from "../../store/settingsStore";
+import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "../../store/settingsStore";
 import type { PanelId } from "../../types";
 import PanelErrorBoundary from "../shared/PanelErrorBoundary";
 import HomePanel from "./HomePanel";
@@ -42,6 +42,10 @@ const PANEL_MAP: Record<PanelId, React.ComponentType> = {
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
+
+// Bar docked right → panel's free edge (resize handle) is its left border and
+// dragging toward the left increases width. Docked left → all mirrored.
+const DOCKED_LEFT = INITIAL_SIDEBAR_POSITION === "left";
 
 const BG_CLASSES: Record<string, string> = {
   "default":          "bg-[#13131f]",
@@ -93,14 +97,13 @@ export default function PanelContainer({
       setIsDragging(true);
 
       const handleMouseMove = (ev: MouseEvent) => {
-        // Panel is on the right side: dragging left increases width
-        const delta = startX - ev.clientX;
+        const delta = DOCKED_LEFT ? ev.clientX - startX : startX - ev.clientX;
         const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + delta));
         setLocalWidth(newWidth);
       };
 
       const handleMouseUp = (ev: MouseEvent) => {
-        const delta = startX - ev.clientX;
+        const delta = DOCKED_LEFT ? ev.clientX - startX : startX - ev.clientX;
         const finalWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + delta));
         setLocalWidth(finalWidth);
         setIsDragging(false);
@@ -122,10 +125,10 @@ export default function PanelContainer({
       }`}
       style={{ width: activePanel ? localWidth : 0 }}
     >
-      {/* Resize handle — left edge of the panel */}
+      {/* Resize handle — free edge of the panel (opposite the icon strip) */}
       {activePanel && (
         <div
-          className="absolute left-0 top-0 z-10 h-full w-1 cursor-ew-resize hover:bg-blue-500/50 active:bg-blue-500/70 transition-colors"
+          className={`absolute ${DOCKED_LEFT ? "right-0" : "left-0"} top-0 z-10 h-full w-1 cursor-ew-resize hover:bg-blue-500/50 active:bg-blue-500/70 transition-colors`}
           onMouseDown={handleResizeStart}
         />
       )}

@@ -1,16 +1,33 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use windows_sys::Win32::Foundation::{HWND, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 use windows_sys::Win32::UI::Shell::{
-    SHAppBarMessage, APPBARDATA, ABE_RIGHT, ABM_ACTIVATE, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE,
-    ABM_SETPOS, ABM_WINDOWPOSCHANGED,
+    SHAppBarMessage, APPBARDATA, ABE_LEFT, ABE_RIGHT, ABM_ACTIVATE, ABM_NEW, ABM_QUERYPOS,
+    ABM_REMOVE, ABM_SETPOS, ABM_WINDOWPOSCHANGED,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, MoveWindow, SM_CXSCREEN, SM_CYSCREEN, WM_USER,
 };
 
 pub const APPBAR_CALLBACK: u32 = WM_USER + 1;
+
+/// Screen edge the bar is docked to (`ABE_LEFT` or `ABE_RIGHT`). Set once at
+/// `register_appbar` time from the user setting; a module-level atomic (same
+/// pattern as `CURRENT_WIDTH` in subclass.rs) so the native subclass proc can
+/// rebuild APPBARDATA without a state handle.
+static CURRENT_EDGE: AtomicU32 = AtomicU32::new(ABE_RIGHT);
+
+pub fn set_current_edge(edge: u32) {
+    let edge = if edge == ABE_LEFT { ABE_LEFT } else { ABE_RIGHT };
+    CURRENT_EDGE.store(edge, Ordering::Relaxed);
+}
+
+fn current_edge() -> u32 {
+    CURRENT_EDGE.load(Ordering::Relaxed)
+}
 
 /// Cast a stored usize handle back to the HWND pointer type.
 #[inline]
@@ -49,7 +66,7 @@ fn make_empty_data(hwnd: usize) -> APPBARDATA {
         cbSize: std::mem::size_of::<APPBARDATA>() as u32,
         hWnd: as_hwnd(hwnd),
         uCallbackMessage: APPBAR_CALLBACK,
-        uEdge: ABE_RIGHT,
+        uEdge: current_edge(),
         rc: RECT {
             left: 0,
             top: 0,
@@ -70,7 +87,8 @@ pub fn ensure_registered(hwnd: usize) {
 }
 
 /// Reserve the work-area band with the shell and return the **deterministic**
-/// target window rect: `width` px anchored to the shell-approved right edge.
+/// target window rect: `width` px anchored to the shell-approved edge
+/// (left or right per `CURRENT_EDGE`).
 ///
 /// Important: the returned rect is derived from the monitor + requested `width`,
 /// NOT from the rect that `ABM_SETPOS` writes back. After resume-from-suspend
@@ -81,28 +99,45 @@ pub fn ensure_registered(hwnd: usize) {
 pub fn reserve_band(hwnd: usize, width: i32) -> RECT {
     unsafe {
         let mon = monitor_rect(hwnd);
+        let docked_left = current_edge() == ABE_LEFT;
 
         let mut data = make_empty_data(hwnd);
-        data.rc = RECT {
-            left: mon.right - width,
-            top: mon.top,
-            right: mon.right,
-            bottom: mon.bottom,
+        data.rc = if docked_left {
+            RECT {
+                left: mon.left,
+                top: mon.top,
+                right: mon.left + width,
+                bottom: mon.bottom,
+            }
+        } else {
+            RECT {
+                left: mon.right - width,
+                top: mon.top,
+                right: mon.right,
+                bottom: mon.bottom,
+            }
         };
 
-        // Ask the shell for the approved edges (it may pull `right` in for a
-        // right-docked taskbar, or adjust top/bottom).
+        // Ask the shell for the approved edges (it may pull the anchored edge
+        // in for a taskbar docked on the same side, or adjust top/bottom).
         SHAppBarMessage(ABM_QUERYPOS, &mut data);
-        let right = data.rc.right;
         let top = data.rc.top;
         let bottom = data.rc.bottom;
 
-        // Reserve the band on the shell-approved right edge.
-        data.rc.left = right - width;
+        // Reserve the band on the shell-approved edge, forcing our width.
+        let (left, right) = if docked_left {
+            let left = data.rc.left;
+            data.rc.right = left + width;
+            (left, left + width)
+        } else {
+            let right = data.rc.right;
+            data.rc.left = right - width;
+            (right - width, right)
+        };
         SHAppBarMessage(ABM_SETPOS, &mut data);
 
         RECT {
-            left: right - width,
+            left,
             top,
             right,
             bottom,

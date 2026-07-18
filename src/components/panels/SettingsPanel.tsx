@@ -2,11 +2,12 @@ import { useState, useEffect } from "react"
 import {
   Home, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
-  GripVertical, LogOut, Info, Keyboard, Sparkles,
+  GripVertical, LogOut, Info, Keyboard, Sparkles, RotateCcw,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { getVersion } from "@tauri-apps/api/app"
-import { useSettingsStore } from "../../store/settingsStore"
+import { invoke } from "@tauri-apps/api/core"
+import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "../../store/settingsStore"
 import { useDesktopAuth } from "../../features/auth/useDesktopAuth"
 import { apiFetch } from "../../lib/apiFetch"
 import type { PanelId } from "../../types"
@@ -30,6 +31,12 @@ const BG_OPTIONS = [
   { value: "gradient-blue",   label: "Azul",        preview: "bg-gradient-to-b from-[#0a1628] to-[#13131f]" },
   { value: "gradient-teal",   label: "Teal",        preview: "bg-gradient-to-b from-[#0a1a1a] to-[#13131f]" },
 ]
+
+// ─── Sidebar position options ─────────────────────────────────────────────────
+const POSITION_OPTIONS = [
+  { value: "right", label: "Derecha"   },
+  { value: "left",  label: "Izquierda" },
+] as const
 
 // ─── Refresh interval options ─────────────────────────────────────────────────
 const REFRESH_OPTIONS = [
@@ -74,6 +81,7 @@ export default function SettingsPanel() {
     hiddenPanels, toggleHiddenPanel,
     refreshInterval, setRefreshInterval,
     panelWidth, setPanelWidth,
+    sidebarPosition, setSidebarPosition,
   } = useSettingsStore()
 
   const [appVersion,    setAppVersion]    = useState<string>("...")
@@ -248,6 +256,43 @@ export default function SettingsPanel() {
         <section>
           <SectionHeader title="Comportamiento" />
 
+          {/* Ubicación de la barra — el anclaje AppBar solo se lee al arrancar,
+              por eso el cambio requiere reiniciar la aplicación */}
+          <div className="mb-4">
+            <p className="mb-2 text-xs text-gray-400">Ubicación de la barra</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {POSITION_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSidebarPosition(opt.value)}
+                  className={`rounded-md px-2 py-1.5 text-[11px] transition-colors ${
+                    sidebarPosition === opt.value
+                      ? "text-gray-100"
+                      : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                  }`}
+                  style={sidebarPosition === opt.value ? { backgroundColor: `${accentHex}33` } : undefined}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {sidebarPosition !== INITIAL_SIDEBAR_POSITION && (
+              <div className="mt-2 rounded-md bg-white/5 p-2.5">
+                <p className="mb-2 text-[10px] text-gray-500">
+                  El cambio se aplica al reiniciar la aplicación.
+                </p>
+                <button
+                  onClick={() => invoke("restart_app").catch(console.error)}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-gray-100 transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: accentHex }}
+                >
+                  <RotateCcw size={12} />
+                  Reiniciar ahora
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="mb-4">
             <p className="mb-2 text-xs text-gray-400">Intervalo de actualización</p>
             <div className="grid grid-cols-2 gap-1.5">
@@ -368,7 +413,10 @@ export default function SettingsPanel() {
             <div className="rounded-md bg-white/5 p-2.5 space-y-2">
               {[
                 { key: "Clic en ícono activo",  action: "Cerrar panel" },
-                { key: "Arrastrar borde izq.",   action: "Redimensionar" },
+                {
+                  key: INITIAL_SIDEBAR_POSITION === "left" ? "Arrastrar borde der." : "Arrastrar borde izq.",
+                  action: "Redimensionar",
+                },
               ].map(({ key, action }) => (
                 <div key={key} className="flex items-center justify-between gap-3">
                   <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">

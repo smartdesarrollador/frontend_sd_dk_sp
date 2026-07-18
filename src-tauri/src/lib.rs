@@ -162,10 +162,18 @@ fn register_appbar(
     window: tauri::WebviewWindow,
     state: State<'_, AppBarMutex>,
     width: i32,
+    edge: Option<String>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        use windows_sys::Win32::UI::Shell::{ABE_LEFT, ABE_RIGHT};
         let hwnd = get_hwnd(&window)?;
+        // Anything other than an explicit "left" keeps the right-edge default.
+        let edge_value = match edge.as_deref() {
+            Some("left") => ABE_LEFT,
+            _ => ABE_RIGHT,
+        };
+        appbar::registration::set_current_edge(edge_value);
         appbar::subclass::set_current_width(width);
         // Fresh registration: drop any stale shell-side registration first
         // (after resume-from-suspend the shell can carry a ghost band that
@@ -187,7 +195,7 @@ fn register_appbar(
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (window, state, width);
+        let _ = (window, state, width, edge);
         return Err("AppBar is only supported on Windows".to_string());
     }
     Ok(())
@@ -236,6 +244,14 @@ fn unregister_appbar(state: State<'_, AppBarMutex>) -> Result<(), String> {
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     opener::open(url).map_err(|e| e.to_string())
+}
+
+/// Relaunch the app so settings that only apply at startup (sidebar edge)
+/// take effect. The Destroyed handler unregisters the appbar band on the way
+/// out, so the new instance starts from a clean shell state.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
 }
 
 #[tauri::command]
@@ -314,6 +330,7 @@ pub fn run() {
             resize_appbar,
             unregister_appbar,
             open_url,
+            restart_app,
             open_hub_login,
             poll_deep_link_url,
             store_desktop_auth,

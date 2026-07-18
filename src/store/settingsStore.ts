@@ -6,6 +6,8 @@ export const DEFAULT_SIDEBAR_ORDER: PanelId[] = [
   "notes", "contacts", "bookmarks", "projects", "calendar", "vault", "tools", "services", "profile",
 ]
 
+export type SidebarPosition = 'left' | 'right'
+
 interface SettingsData {
   accentColor: string
   panelBackground: string
@@ -13,6 +15,7 @@ interface SettingsData {
   hiddenPanels: PanelId[]
   refreshInterval: number
   panelWidth: number
+  sidebarPosition: SidebarPosition
 }
 
 interface SettingsState extends SettingsData {
@@ -22,6 +25,7 @@ interface SettingsState extends SettingsData {
   toggleHiddenPanel: (panel: PanelId) => void
   setRefreshInterval: (seconds: number) => void
   setPanelWidth: (width: number) => void
+  setSidebarPosition: (position: SidebarPosition) => void
 }
 
 const STORAGE_KEY = 'desktop-settings'
@@ -33,6 +37,7 @@ const DEFAULTS: SettingsData = {
   hiddenPanels:    [],
   refreshInterval: 60,
   panelWidth:      320,
+  sidebarPosition: 'right',
 }
 
 function load(): SettingsData {
@@ -59,6 +64,11 @@ function save(data: SettingsData) {
 }
 
 const initial = load()
+
+// Position the appbar was actually registered with at this launch. The store
+// value can change from Settings, but the native anchoring only re-reads it on
+// the next startup — UI that mirrors the physical side must use this constant.
+export const INITIAL_SIDEBAR_POSITION: SidebarPosition = initial.sidebarPosition
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   ...initial,
@@ -89,5 +99,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setPanelWidth: (panelWidth) => {
     set({ panelWidth })
     save({ ...get(), panelWidth })
+  },
+  setSidebarPosition: (sidebarPosition) => {
+    set({ sidebarPosition })
+    save({ ...get(), sidebarPosition })
   },
 }))

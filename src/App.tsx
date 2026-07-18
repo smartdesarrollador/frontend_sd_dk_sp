@@ -4,7 +4,7 @@ import Sidebar from "./components/Sidebar";
 import { useWakeReload } from "./hooks/useWakeReload";
 import { useNotificationsPoller } from "./features/notifications/useNotificationsPoller";
 import { useNavigationStore } from "./store/navigationStore";
-import { useSettingsStore } from "./store/settingsStore";
+import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "./store/settingsStore";
 import type { PanelId } from "./types";
 
 const ICON_WIDTH = 60;
@@ -45,7 +45,9 @@ function App() {
   // (no reserved work-area, resize_appbar becomes a no-op → sliver panel).
   // Real teardown is handled natively by the Destroyed handler in lib.rs.
   useEffect(() => {
-    invoke("register_appbar", { width: ICON_WIDTH }).catch(console.error);
+    // Edge is the launch-time value on purpose: changing it in Settings only
+    // takes effect after an app restart.
+    invoke("register_appbar", { width: ICON_WIDTH, edge: INITIAL_SIDEBAR_POSITION }).catch(console.error);
   }, []);
 
   const handlePanelChange = async (panel: PanelId) => {
