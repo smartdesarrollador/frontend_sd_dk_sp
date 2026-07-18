@@ -34,6 +34,19 @@ const ALL_NAV_META: Partial<Record<PanelId, NavItem>> = {
 
 const settingsItem: NavItem = { id: "settings", icon: Settings, label: "Settings" }
 
+// Fondo de la barra configurable desde Settings → Apariencia. Cada opción lleva,
+// además del fondo, el color de los desvanecidos de las flechas de scroll: el
+// superior usa el tono del tope de la barra y el inferior el de la base (en las
+// variantes degradadas difieren).
+const STRIP_BG: Record<string, { bg: string; fadeTop: string; fadeBottom: string }> = {
+  "default":         { bg: "bg-[#1e1e2e]", fadeTop: "from-[#1e1e2e]", fadeBottom: "from-[#1e1e2e]" },
+  "dark-blue":       { bg: "bg-[#161b26]", fadeTop: "from-[#161b26]", fadeBottom: "from-[#161b26]" },
+  "darker":          { bg: "bg-[#101018]", fadeTop: "from-[#101018]", fadeBottom: "from-[#101018]" },
+  "gradient-purple": { bg: "bg-gradient-to-b from-[#251440] to-[#1e1e2e]", fadeTop: "from-[#251440]", fadeBottom: "from-[#1e1e2e]" },
+  "gradient-blue":   { bg: "bg-gradient-to-b from-[#122238] to-[#1e1e2e]", fadeTop: "from-[#122238]", fadeBottom: "from-[#1e1e2e]" },
+  "gradient-teal":   { bg: "bg-gradient-to-b from-[#122626] to-[#1e1e2e]", fadeTop: "from-[#122626]", fadeBottom: "from-[#1e1e2e]" },
+}
+
 // TEMP-SCROLL-TEST: 10 iconos de relleno para probar el scroll con overflow real.
 // No son paneles (click no hace nada). ELIMINAR este bloque y su render tras la prueba.
 const TEMP_TEST_ITEMS = [
@@ -58,6 +71,8 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
   const unreadCount   = useNotificationsStore((s) => s.unreadCount)
   const sidebarOrder  = useSettingsStore((s) => s.sidebarOrder)
   const hiddenPanels  = useSettingsStore((s) => s.hiddenPanels)
+  const stripBackground = useSettingsStore((s) => s.stripBackground)
+  const strip = STRIP_BG[stripBackground] ?? STRIP_BG.default
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollUp, setCanScrollUp]     = useState(false)
@@ -100,7 +115,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
   }
 
   return (
-    <div className="flex h-full w-[60px] flex-col items-center bg-[#1e1e2e] py-4">
+    <div className={`flex h-full w-[60px] flex-col items-center ${strip.bg} py-4`}>
       <div className="relative min-h-0 w-full flex-1">
         <div
           ref={scrollRef}
@@ -141,7 +156,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
           ))}
         </div>
         {canScrollUp && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex h-4 items-start justify-center bg-gradient-to-b from-[#1e1e2e] to-transparent">
+          <div className={`pointer-events-none absolute inset-x-0 top-0 flex h-4 items-start justify-center bg-gradient-to-b ${strip.fadeTop} to-transparent`}>
             <button
               onClick={() => scrollByPage(-1)}
               aria-label="Desplazar iconos hacia arriba"
@@ -152,7 +167,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
           </div>
         )}
         {canScrollDown && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-4 items-end justify-center bg-gradient-to-t from-[#1e1e2e] to-transparent">
+          <div className={`pointer-events-none absolute inset-x-0 bottom-0 flex h-4 items-end justify-center bg-gradient-to-t ${strip.fadeBottom} to-transparent`}>
             <button
               onClick={() => scrollByPage(1)}
               aria-label="Desplazar iconos hacia abajo"

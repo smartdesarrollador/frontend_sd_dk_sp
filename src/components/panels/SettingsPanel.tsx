@@ -3,10 +3,10 @@ import {
   Home, Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
   GripVertical, LogOut, Info, Keyboard, Sparkles, RotateCcw,
+  Palette, PanelLeft, SlidersHorizontal,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { getVersion } from "@tauri-apps/api/app"
-import { invoke } from "@tauri-apps/api/core"
 import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "../../store/settingsStore"
 import { useDesktopAuth } from "../../features/auth/useDesktopAuth"
 import { apiFetch } from "../../lib/apiFetch"
@@ -30,6 +30,18 @@ const BG_OPTIONS = [
   { value: "gradient-purple", label: "Púrpura",     preview: "bg-gradient-to-b from-[#1a0a2e] to-[#13131f]" },
   { value: "gradient-blue",   label: "Azul",        preview: "bg-gradient-to-b from-[#0a1628] to-[#13131f]" },
   { value: "gradient-teal",   label: "Teal",        preview: "bg-gradient-to-b from-[#0a1a1a] to-[#13131f]" },
+]
+
+// ─── Strip (barra lateral) background options ─────────────────────────────────
+// Mismas 6 variantes que BG_OPTIONS pero un paso más claras, para conservar el
+// contraste barra/panel (default: panel #13131f vs barra #1e1e2e).
+const STRIP_BG_OPTIONS = [
+  { value: "default",         label: "Default",     preview: "bg-[#1e1e2e]" },
+  { value: "dark-blue",       label: "Azul oscuro", preview: "bg-[#161b26]" },
+  { value: "darker",          label: "Más oscuro",  preview: "bg-[#101018]" },
+  { value: "gradient-purple", label: "Púrpura",     preview: "bg-gradient-to-b from-[#251440] to-[#1e1e2e]" },
+  { value: "gradient-blue",   label: "Azul",        preview: "bg-gradient-to-b from-[#122238] to-[#1e1e2e]" },
+  { value: "gradient-teal",   label: "Teal",        preview: "bg-gradient-to-b from-[#122626] to-[#1e1e2e]" },
 ]
 
 // ─── Sidebar position options ─────────────────────────────────────────────────
@@ -63,6 +75,17 @@ const PANEL_META: Partial<Record<PanelId, { icon: LucideIcon; label: string }>> 
   profile:   { icon: User,          label: "Perfil"    },
 }
 
+// ─── Settings tabs ────────────────────────────────────────────────────────────
+type SettingsTab = "appearance" | "sidebar" | "behavior" | "session" | "about"
+
+const SETTINGS_TABS: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
+  { id: "appearance", label: "Apariencia",     icon: Palette           },
+  { id: "sidebar",    label: "Sidebar",        icon: PanelLeft         },
+  { id: "behavior",   label: "Comportamiento", icon: SlidersHorizontal },
+  { id: "session",    label: "Sesión",         icon: User              },
+  { id: "about",      label: "Acerca de",      icon: Info              },
+]
+
 function SectionHeader({ title }: { title: string }) {
   return (
     <div className="mb-3 border-b border-white/10 pb-1">
@@ -77,6 +100,7 @@ export default function SettingsPanel() {
   const {
     accentColor, setAccentColor,
     panelBackground, setPanelBackground,
+    stripBackground, setStripBackground,
     sidebarOrder, setSidebarOrder,
     hiddenPanels, toggleHiddenPanel,
     refreshInterval, setRefreshInterval,
@@ -88,6 +112,12 @@ export default function SettingsPanel() {
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [isLoggingOut,  setIsLoggingOut]  = useState(false)
   const [dragIndex,     setDragIndex]     = useState<number | null>(null)
+  const [activeTab,     setActiveTab]     = useState<SettingsTab>("appearance")
+
+  // La pestaña Sesión desaparece al hacer logout — volver a Apariencia
+  const visibleTabs = SETTINGS_TABS.filter((t) => t.id !== "session" || isAuthenticated)
+  const currentTab: SettingsTab =
+    !isAuthenticated && activeTab === "session" ? "appearance" : activeTab
 
   const accentHex = ACCENT_OPTIONS.find((o) => o.value === accentColor)?.hex ?? "#2563eb"
 
@@ -147,9 +177,33 @@ export default function SettingsPanel() {
         <h2 className="text-sm font-semibold text-gray-100">Configuración</h2>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
+      {/* Tab bar (ícono + tooltip) */}
+      <div className="shrink-0 border-b border-white/10 flex gap-1 px-2 py-2">
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
+          <div key={id} className="relative group flex-1">
+            <button
+              onClick={() => setActiveTab(id)}
+              aria-label={label}
+              className={`flex w-full items-center justify-center rounded px-1 py-1.5 transition-colors ${
+                currentTab === id
+                  ? "text-gray-100"
+                  : "text-gray-500 hover:bg-white/5 hover:text-gray-300"
+              }`}
+              style={currentTab === id ? { backgroundColor: `${accentHex}33` } : undefined}
+            >
+              <Icon size={15} />
+            </button>
+            <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-gray-200 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+              {label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
 
         {/* ── A. Apariencia ─────────────────────────────────────────────────── */}
+        {currentTab === "appearance" && (
         <section>
           <SectionHeader title="Apariencia" />
 
@@ -174,7 +228,7 @@ export default function SettingsPanel() {
           </div>
 
           {/* Fondo del panel */}
-          <div>
+          <div className="mb-4">
             <p className="mb-2 text-xs text-gray-400">Fondo del panel</p>
             <div className="grid grid-cols-3 gap-2">
               {BG_OPTIONS.map((opt) => (
@@ -195,9 +249,34 @@ export default function SettingsPanel() {
               ))}
             </div>
           </div>
+
+          {/* Fondo de la barra lateral */}
+          <div>
+            <p className="mb-2 text-xs text-gray-400">Fondo de la barra lateral</p>
+            <div className="grid grid-cols-3 gap-2">
+              {STRIP_BG_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setStripBackground(opt.value)}
+                  title={opt.label}
+                  className={`relative h-10 rounded-md ${opt.preview} border transition-all ${
+                    stripBackground === opt.value
+                      ? "border-white/40 scale-[1.04]"
+                      : "border-white/10 hover:border-white/25"
+                  }`}
+                >
+                  <span className="absolute inset-x-0 bottom-0.5 text-center text-[8px] text-white/50 leading-none">
+                    {opt.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </section>
+        )}
 
         {/* ── B. Sidebar ────────────────────────────────────────────────────── */}
+        {currentTab === "sidebar" && (
         <section>
           <SectionHeader title="Sidebar" />
           <p className="mb-2 text-[10px] text-gray-600">Arrastrá para reordenar · Toggle para ocultar</p>
@@ -251,13 +330,19 @@ export default function SettingsPanel() {
             })}
           </div>
         </section>
+        )}
 
         {/* ── C. Comportamiento ─────────────────────────────────────────────── */}
+        {currentTab === "behavior" && (
         <section>
           <SectionHeader title="Comportamiento" />
 
-          {/* Ubicación de la barra — el anclaje AppBar solo se lee al arrancar,
-              por eso el cambio requiere reiniciar la aplicación */}
+          {/* Ubicación de la barra — el anclaje AppBar se captura al cargar el
+              frontend (INITIAL_SIDEBAR_POSITION); recargar el WebView re-ejecuta
+              register_appbar con el nuevo borde. No usar restart_app: en dev,
+              relanzar el proceso mata el server de Vite (el CLI de tauri dev
+              muere con el proceso original) y la instancia nueva queda en
+              ERR_CONNECTION_REFUSED. */}
           <div className="mb-4">
             <p className="mb-2 text-xs text-gray-400">Ubicación de la barra</p>
             <div className="grid grid-cols-2 gap-1.5">
@@ -279,15 +364,15 @@ export default function SettingsPanel() {
             {sidebarPosition !== INITIAL_SIDEBAR_POSITION && (
               <div className="mt-2 rounded-md bg-white/5 p-2.5">
                 <p className="mb-2 text-[10px] text-gray-500">
-                  El cambio se aplica al reiniciar la aplicación.
+                  El cambio se aplica al recargar la barra.
                 </p>
                 <button
-                  onClick={() => invoke("restart_app").catch(console.error)}
+                  onClick={() => window.location.reload()}
                   className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-gray-100 transition-opacity hover:opacity-90"
                   style={{ backgroundColor: accentHex }}
                 >
                   <RotateCcw size={12} />
-                  Reiniciar ahora
+                  Aplicar ahora
                 </button>
               </div>
             )}
@@ -354,9 +439,10 @@ export default function SettingsPanel() {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── D. Sesión ─────────────────────────────────────────────────────── */}
-        {isAuthenticated && (
+        {currentTab === "session" && isAuthenticated && (
           <section>
             <SectionHeader title="Sesión" />
             {user?.email && (
@@ -394,6 +480,7 @@ export default function SettingsPanel() {
         )}
 
         {/* ── E. Acerca de ──────────────────────────────────────────────────── */}
+        {currentTab === "about" && (
         <section>
           <SectionHeader title="Acerca de" />
 
@@ -428,6 +515,7 @@ export default function SettingsPanel() {
             </div>
           </div>
         </section>
+        )}
 
       </div>
     </div>

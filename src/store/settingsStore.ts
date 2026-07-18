@@ -11,6 +11,7 @@ export type SidebarPosition = 'left' | 'right'
 interface SettingsData {
   accentColor: string
   panelBackground: string
+  stripBackground: string
   sidebarOrder: PanelId[]
   hiddenPanels: PanelId[]
   refreshInterval: number
@@ -21,6 +22,7 @@ interface SettingsData {
 interface SettingsState extends SettingsData {
   setAccentColor: (color: string) => void
   setPanelBackground: (bg: string) => void
+  setStripBackground: (bg: string) => void
   setSidebarOrder: (order: PanelId[]) => void
   toggleHiddenPanel: (panel: PanelId) => void
   setRefreshInterval: (seconds: number) => void
@@ -33,6 +35,7 @@ const STORAGE_KEY = 'desktop-settings'
 const DEFAULTS: SettingsData = {
   accentColor:     'blue',
   panelBackground: 'default',
+  stripBackground: 'default',
   sidebarOrder:    DEFAULT_SIDEBAR_ORDER,
   hiddenPanels:    [],
   refreshInterval: 60,
@@ -80,6 +83,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setPanelBackground: (panelBackground) => {
     set({ panelBackground })
     save({ ...get(), panelBackground })
+  },
+  setStripBackground: (stripBackground) => {
+    set({ stripBackground })
+    save({ ...get(), stripBackground })
   },
   setSidebarOrder: (sidebarOrder) => {
     set({ sidebarOrder })
