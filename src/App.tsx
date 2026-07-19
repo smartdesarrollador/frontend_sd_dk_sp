@@ -35,8 +35,16 @@ function App() {
 
   const pendingPanel = useNavigationStore((s) => s.pendingPanel);
   const clearPending = useNavigationStore((s) => s.clearPending);
+  const pushHistory  = useNavigationStore((s) => s.push);
+  const historyBack     = useNavigationStore((s) => s.back);
+  const historyForward  = useNavigationStore((s) => s.forward);
+  const canGoBack    = useNavigationStore((s) => s.index > 0);
+  const canGoForward = useNavigationStore((s) => s.index < s.history.length - 1);
   useEffect(() => {
-    if (pendingPanel) { handlePanelChange(pendingPanel); clearPending(); }
+    if (pendingPanel) {
+      if (pendingPanel !== activePanel) openPanel(pendingPanel, true);
+      clearPending();
+    }
   }, [pendingPanel]);
 
   // No cleanup on purpose: with StrictMode's double-mount the three async
@@ -51,11 +59,31 @@ function App() {
     invoke("register_appbar", { width: ICON_WIDTH, edge: INITIAL_SIDEBAR_POSITION }).catch(console.error);
   }, []);
 
+  const openPanel = async (panel: PanelId, record: boolean) => {
+    setActivePanel(panel);
+    if (record) pushHistory(panel);
+    await invoke("resize_appbar", { width: ICON_WIDTH + panelWidth }).catch(console.error);
+  };
+
+  // Colapsa a la tira de iconos sin tocar el historial (reabrir lo conserva)
+  const closePanel = async () => {
+    setActivePanel(null);
+    await invoke("resize_appbar", { width: ICON_WIDTH }).catch(console.error);
+  };
+
   const handlePanelChange = async (panel: PanelId) => {
-    const newPanel = activePanel === panel ? null : panel;
-    const newWidth = newPanel ? ICON_WIDTH + panelWidth : ICON_WIDTH;
-    setActivePanel(newPanel);
-    await invoke("resize_appbar", { width: newWidth }).catch(console.error);
+    if (activePanel === panel) await closePanel();
+    else await openPanel(panel, true);
+  };
+
+  const handleBack = async () => {
+    const target = historyBack();
+    if (target) await openPanel(target, false);
+  };
+
+  const handleForward = async () => {
+    const target = historyForward();
+    if (target) await openPanel(target, false);
   };
 
   const handlePanelWidthChange = async (newWidth: number) => {
@@ -73,6 +101,11 @@ function App() {
         onPanelChange={handlePanelChange}
         panelWidth={panelWidth}
         onPanelWidthChange={handlePanelWidthChange}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        onBack={handleBack}
+        onForward={handleForward}
+        onClose={closePanel}
       />
     </div>
   );

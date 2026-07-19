@@ -34,6 +34,10 @@ const ALL_NAV_META: Partial<Record<PanelId, NavItem>> = {
 
 const settingsItem: NavItem = { id: "settings", icon: Settings, label: "Settings" }
 
+// Anclados en la zona fija inferior junto a Settings: siempre visibles,
+// fuera del scroll y del orden/ocultado configurables del sidebar.
+const PINNED_PANELS: PanelId[] = ["home", "profile"]
+
 // Fondo de la barra configurable desde Settings → Apariencia. Cada opción lleva,
 // además del fondo, el color de los desvanecidos de las flechas de scroll: el
 // superior usa el tono del tope de la barra y el inferior el de la base (en las
@@ -81,7 +85,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
   const orderedNavItems = useMemo(
     () =>
       sidebarOrder
-        .filter((id) => !hiddenPanels.includes(id))
+        .filter((id) => !hiddenPanels.includes(id) && !PINNED_PANELS.includes(id))
         .map((id) => ALL_NAV_META[id])
         .filter((item): item is NavItem => item !== undefined),
     [sidebarOrder, hiddenPanels],
@@ -179,6 +183,20 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
         )}
       </div>
       <div className="mt-1 flex flex-col items-center gap-1">
+        {/* Divisor entre los iconos scrolleables y la zona fija */}
+        <div className="mb-1 h-px w-8 bg-white/15" />
+        {PINNED_PANELS.map((id) => {
+          const item = ALL_NAV_META[id]
+          if (!item) return null
+          return (
+            <NavIcon
+              key={id}
+              item={item}
+              isActive={activePanel === id}
+              onClick={() => onPanelChange(id)}
+            />
+          )
+        })}
         <NavIcon
           item={settingsItem}
           isActive={activePanel === "settings"}

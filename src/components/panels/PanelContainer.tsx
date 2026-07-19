@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "../../store/settingsStore";
 import type { PanelId } from "../../types";
 import PanelErrorBoundary from "../shared/PanelErrorBoundary";
+import PanelHeader from "./PanelHeader";
 import HomePanel from "./HomePanel";
 import FilesPanel from "./FilesPanel";
 import ChatPanel from "./ChatPanel";
@@ -60,12 +61,22 @@ interface PanelContainerProps {
   activePanel: PanelId | null;
   panelWidth: number;
   onWidthChange: (width: number) => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+  onClose: () => void;
 }
 
 export default function PanelContainer({
   activePanel,
   panelWidth,
   onWidthChange,
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+  onClose,
 }: PanelContainerProps) {
   const [localWidth, setLocalWidth] = useState(panelWidth);
   const [isDragging, setIsDragging] = useState(false);
@@ -133,35 +144,46 @@ export default function PanelContainer({
         />
       )}
 
-      <div style={{ width: localWidth }} className="h-full relative">
-        {/* Notas se mantiene siempre montado para no perder el borrador de
-            "Nueva nota" al cambiar de panel y volver */}
-        <div className="absolute inset-0" style={{ display: isNotesActive ? "block" : "none" }}>
-          <PanelErrorBoundary resetKey="notes">
-            <NotesPanel />
-          </PanelErrorBoundary>
-        </div>
-        {/* Tareas se mantiene siempre montado para no perder el borrador de
-            "Nueva tarea" al cambiar de panel y volver */}
-        <div className="absolute inset-0" style={{ display: isTasksActive ? "block" : "none" }}>
-          <PanelErrorBoundary resetKey="tasks">
-            <TasksPanel />
-          </PanelErrorBoundary>
-        </div>
-        {/* Snippets se mantiene siempre montado para no perder el borrador de
-            "Nuevo snippet" al cambiar de panel y volver */}
-        <div className="absolute inset-0" style={{ display: isSnippetsActive ? "block" : "none" }}>
-          <PanelErrorBoundary resetKey="snippets">
-            <SnippetsPanel />
-          </PanelErrorBoundary>
-        </div>
-        {OtherActivePanel && (
-          <div className="absolute inset-0">
-            <PanelErrorBoundary resetKey={activePanel ?? undefined}>
-              <OtherActivePanel />
+      <div style={{ width: localWidth }} className="flex h-full flex-col">
+        {activePanel && (
+          <PanelHeader
+            canGoBack={canGoBack}
+            canGoForward={canGoForward}
+            onBack={onBack}
+            onForward={onForward}
+            onClose={onClose}
+          />
+        )}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {/* Notas se mantiene siempre montado para no perder el borrador de
+              "Nueva nota" al cambiar de panel y volver */}
+          <div className="absolute inset-0" style={{ display: isNotesActive ? "block" : "none" }}>
+            <PanelErrorBoundary resetKey="notes">
+              <NotesPanel />
             </PanelErrorBoundary>
           </div>
-        )}
+          {/* Tareas se mantiene siempre montado para no perder el borrador de
+              "Nueva tarea" al cambiar de panel y volver */}
+          <div className="absolute inset-0" style={{ display: isTasksActive ? "block" : "none" }}>
+            <PanelErrorBoundary resetKey="tasks">
+              <TasksPanel />
+            </PanelErrorBoundary>
+          </div>
+          {/* Snippets se mantiene siempre montado para no perder el borrador de
+              "Nuevo snippet" al cambiar de panel y volver */}
+          <div className="absolute inset-0" style={{ display: isSnippetsActive ? "block" : "none" }}>
+            <PanelErrorBoundary resetKey="snippets">
+              <SnippetsPanel />
+            </PanelErrorBoundary>
+          </div>
+          {OtherActivePanel && (
+            <div className="absolute inset-0">
+              <PanelErrorBoundary resetKey={activePanel ?? undefined}>
+                <OtherActivePanel />
+              </PanelErrorBoundary>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

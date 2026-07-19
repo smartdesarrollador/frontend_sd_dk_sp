@@ -8,6 +8,11 @@ interface SidebarProps {
   onPanelChange: (panel: PanelId) => void;
   panelWidth: number;
   onPanelWidthChange: (width: number) => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+  onClose: () => void;
 }
 
 export default function Sidebar({
@@ -15,6 +20,11 @@ export default function Sidebar({
   onPanelChange,
   panelWidth,
   onPanelWidthChange,
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+  onClose,
 }: SidebarProps) {
   // Docked right: icon strip on the right, panel opens to its left
   // (flex-row-reverse). Docked left: mirrored with plain flex-row.
@@ -28,6 +38,11 @@ export default function Sidebar({
         activePanel={activePanel}
         panelWidth={panelWidth}
         onWidthChange={onPanelWidthChange}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        onBack={onBack}
+        onForward={onForward}
+        onClose={onClose}
       />
     </div>
   );

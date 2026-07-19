@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import {
-  Home, Files, MessageSquare, Bell, Code2, CheckSquare,
+  Files, MessageSquare, Bell, Code2, CheckSquare,
   StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
   GripVertical, LogOut, Info, Keyboard, Sparkles, RotateCcw,
   Palette, PanelLeft, SlidersHorizontal,
@@ -60,7 +60,6 @@ const REFRESH_OPTIONS = [
 
 // ─── Panel meta ───────────────────────────────────────────────────────────────
 const PANEL_META: Partial<Record<PanelId, { icon: LucideIcon; label: string }>> = {
-  home:      { icon: Home,          label: "Home"      },
   files:     { icon: Files,         label: "Files"     },
   chat:      { icon: MessageSquare, label: "Chat"      },
   alerts:    { icon: Bell,          label: "Alertas"   },
@@ -72,7 +71,6 @@ const PANEL_META: Partial<Record<PanelId, { icon: LucideIcon; label: string }>> 
   projects:  { icon: FolderKanban,  label: "Proyectos" },
   calendar:  { icon: CalendarDays,  label: "Calendario"},
   services:  { icon: Sparkles,      label: "Servicios" },
-  profile:   { icon: User,          label: "Perfil"    },
 }
 
 // ─── Settings tabs ────────────────────────────────────────────────────────────
@@ -168,8 +166,11 @@ export default function SettingsPanel() {
     }
   }
 
-  // sidebarOrder never includes "settings" (it lives at bottom always)
-  const draggableOrder = sidebarOrder.filter((id) => id !== "settings")
+  // Home, Perfil y Settings viven anclados en la zona fija inferior de la
+  // barra — no se reordenan ni se ocultan desde aquí
+  const draggableOrder = sidebarOrder.filter(
+    (id) => id !== "settings" && id !== "home" && id !== "profile"
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -286,8 +287,7 @@ export default function SettingsPanel() {
               if (!meta) return null
               const Icon = meta.icon
               const label = meta.label
-              const isHidden    = hiddenPanels.includes(panelId)
-              const isProtected = panelId === "home"
+              const isHidden = hiddenPanels.includes(panelId)
 
               return (
                 <div
@@ -309,15 +309,12 @@ export default function SettingsPanel() {
 
                   {/* Toggle switch */}
                   <button
-                    onClick={() => { if (!isProtected) toggleHiddenPanel(panelId) }}
-                    disabled={isProtected}
-                    title={isProtected ? "Siempre visible" : (isHidden ? "Mostrar" : "Ocultar")}
+                    onClick={() => toggleHiddenPanel(panelId)}
+                    title={isHidden ? "Mostrar" : "Ocultar"}
                     className={`relative h-4 w-7 rounded-full transition-colors ${
-                      isProtected ? "cursor-not-allowed opacity-30 bg-white/10"
-                      : !isHidden  ? ""
-                      : "bg-white/10"
+                      isHidden ? "bg-white/10" : ""
                     }`}
-                    style={!isProtected && !isHidden ? { backgroundColor: accentHex } : undefined}
+                    style={!isHidden ? { backgroundColor: accentHex } : undefined}
                   >
                     <span
                       className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${
