@@ -107,6 +107,67 @@ pub struct AppBarMutex(pub Mutex<AppBarHandle>);
 /// React polls this via `poll_deep_link_url` and clears it after reading.
 pub struct PendingDeepLinkMutex(pub Mutex<Option<String>>);
 
+/// Puerto del canal loopback Hub → Desktop para el handoff de auth.
+/// Debe mantenerse en sync con `deliverDesktopHandoff.ts` del Hub.
+const HANDOFF_PORT: u16 = 17872;
+
+/// Canal loopback (RFC 8252-style) para recibir el deep link de auth sin
+/// depender de la navegación `rbacdesktop://`: Chrome bloquea el lanzamiento
+/// de protocolos externos sin gesto de usuario, que es justo el caso del
+/// re-login con sesión web activa (el Hub dispara el handoff desde un effect
+/// tras el session-restore, no desde un click). El Hub hace un POST del deep
+/// link aquí (fetch no requiere gesto) y el `rbacdesktop://` queda de
+/// fallback. El lado React sigue validando el state nonce, así que cualquier
+/// POST basura de otro proceso local se descarta igual que un deep link falso.
+fn start_handoff_listener(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let server = match tiny_http::Server::http(("127.0.0.1", HANDOFF_PORT)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "[handoff] no se pudo abrir 127.0.0.1:{HANDOFF_PORT}: {e} — solo deep link"
+                );
+                return;
+            }
+        };
+        for mut request in server.incoming_requests() {
+            let is_post_handoff =
+                request.method() == &tiny_http::Method::Post && request.url() == "/handoff";
+            let mut stored = false;
+            if is_post_handoff {
+                let mut body = String::new();
+                let _ = request.as_reader().take(64 * 1024).read_to_string(&mut body);
+                let body = body.trim().to_string();
+                if body.starts_with("rbacdesktop://") {
+                    if let Some(state) = app.try_state::<PendingDeepLinkMutex>() {
+                        if let Ok(mut guard) = state.0.lock() {
+                            *guard = Some(body);
+                            stored = true;
+                        }
+                    }
+                }
+            }
+            let status = if stored || request.method() == &tiny_http::Method::Options {
+                204
+            } else {
+                400
+            };
+            let mut response = tiny_http::Response::empty(status);
+            for (k, v) in [
+                ("Access-Control-Allow-Origin", "*"),
+                ("Access-Control-Allow-Methods", "POST, OPTIONS"),
+                ("Access-Control-Allow-Headers", "content-type"),
+            ] {
+                if let Ok(h) = tiny_http::Header::from_bytes(k.as_bytes(), v.as_bytes()) {
+                    response.add_header(h);
+                }
+            }
+            let _ = request.respond(response);
+        }
+    });
+}
+
 /// Stores the resolved auth payload (set by `store_desktop_auth`).
 pub struct DesktopAuthMutex(pub Mutex<Option<serde_json::Value>>);
 

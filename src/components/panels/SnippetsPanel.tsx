@@ -633,8 +633,9 @@ export default function SnippetsPanel() {
         />
       )}
 
-      {/* Search + language filters */}
-      {!isLoading && !error && (pagination.total > 0 || hasActiveFilters) && (
+      {/* Search + language filters — montado también durante isLoading:
+          desmontarlo en el refetch hace perder el foco del input (LL-100) */}
+      {!error && (isLoading || pagination.total > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />

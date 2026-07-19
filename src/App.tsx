@@ -5,9 +5,14 @@ import { useWakeReload } from "./hooks/useWakeReload";
 import { useNotificationsPoller } from "./features/notifications/useNotificationsPoller";
 import { useNavigationStore } from "./store/navigationStore";
 import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "./store/settingsStore";
+import { useAuthStore } from "./store/authStore";
 import type { PanelId } from "./types";
 
 const ICON_WIDTH = 60;
+
+// Paneles usables sin sesión. Sin autenticar, cualquier otro icono redirige a
+// Perfil, que tiene el botón "Iniciar sesión" a la mano.
+const AUTH_FREE_PANELS: PanelId[] = ["profile", "settings", "tools"];
 
 function App() {
   const [activePanel, setActivePanel] = useState<PanelId | null>(null);
@@ -40,9 +45,14 @@ function App() {
   const historyForward  = useNavigationStore((s) => s.forward);
   const canGoBack    = useNavigationStore((s) => s.index > 0);
   const canGoForward = useNavigationStore((s) => s.index < s.history.length - 1);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const resolvePanel = (panel: PanelId): PanelId =>
+    isAuthenticated || AUTH_FREE_PANELS.includes(panel) ? panel : "profile";
+
   useEffect(() => {
     if (pendingPanel) {
-      if (pendingPanel !== activePanel) openPanel(pendingPanel, true);
+      const target = resolvePanel(pendingPanel);
+      if (target !== activePanel) openPanel(target, true);
       clearPending();
     }
   }, [pendingPanel]);
@@ -72,6 +82,13 @@ function App() {
   };
 
   const handlePanelChange = async (panel: PanelId) => {
+    const target = resolvePanel(panel);
+    // Redirigido a Perfil: sin toggle — clickear otro icono con Perfil ya
+    // abierto no debe cerrar el panel
+    if (target !== panel) {
+      if (activePanel !== target) await openPanel(target, true);
+      return;
+    }
     if (activePanel === panel) await closePanel();
     else await openPanel(panel, true);
   };

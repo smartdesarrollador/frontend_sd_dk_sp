@@ -920,8 +920,10 @@ export default function NotesPanel() {
         />
       )}
 
-      {/* Search + category filter */}
-      {!isLoading && !error && (headerCount > 0 || hasActiveFilters) && (
+      {/* Search + category filter — se mantiene montado durante isLoading:
+          si se desmonta mientras se refresca la búsqueda, el input pierde el
+          foco y el usuario no puede seguir escribiendo */}
+      {!error && (isLoading || headerCount > 0 || hasActiveFilters) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           <div className="relative flex items-center">
             <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />

@@ -521,8 +521,9 @@ export default function TasksPanel() {
         />
       )}
 
-      {/* Search + status filter pills */}
-      {!isLoading && !error && hasAnyTasks && (
+      {/* Search + status filter pills — montado también durante isLoading:
+          desmontarlo en el refetch hace perder el foco del input (LL-100) */}
+      {!error && (isLoading || hasAnyTasks) && (
         <div className="shrink-0 border-b border-white/10 px-3 py-2 space-y-2">
           {/* Search */}
           <div className="relative flex items-center">
