@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import { INITIAL_SIDEBAR_POSITION, useSettingsStore } from "../store/settingsStore"
 import type { NavItem } from "../types";
 
-const ACCENT_BG: Record<string, string> = {
+export const ACCENT_BG: Record<string, string> = {
   blue:   "bg-blue-600",
   purple: "bg-purple-600",
   green:  "bg-green-600",
@@ -24,9 +24,10 @@ interface NavIconProps {
   item: NavItem;
   isActive: boolean;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
-export default function NavIcon({ item, isActive, onClick }: NavIconProps) {
+export default function NavIcon({ item, isActive, onClick, onContextMenu }: NavIconProps) {
   const Icon = item.icon;
   const accentColor = useSettingsStore((s) => s.accentColor)
   const activeBg = ACCENT_BG[accentColor] ?? ACCENT_BG.blue
@@ -57,6 +58,7 @@ export default function NavIcon({ item, isActive, onClick }: NavIconProps) {
     <>
       <button
         onClick={() => { hideTooltip(); onClick(); }}
+        onContextMenu={onContextMenu && ((e) => { hideTooltip(); onContextMenu(e); })}
         onMouseEnter={showTooltip}
         onMouseLeave={hideTooltip}
         aria-label={item.label}

@@ -147,6 +147,7 @@ export default function PanelContainer({
       <div style={{ width: localWidth }} className="flex h-full flex-col">
         {activePanel && (
           <PanelHeader
+            activePanel={activePanel}
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             onBack={onBack}

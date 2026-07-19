@@ -8,12 +8,17 @@ export const DEFAULT_SIDEBAR_ORDER: PanelId[] = [
 
 export type SidebarPosition = 'left' | 'right'
 
+// Tope de accesos fijados en la barra de control del panel: con el ancho
+// mínimo del panel (200px) no entran más iconos entre las flechas y el pin/✕
+export const MAX_PINNED_PANELS = 5
+
 interface SettingsData {
   accentColor: string
   panelBackground: string
   stripBackground: string
   sidebarOrder: PanelId[]
   hiddenPanels: PanelId[]
+  pinnedPanels: PanelId[]
   refreshInterval: number
   panelWidth: number
   sidebarPosition: SidebarPosition
@@ -25,6 +30,7 @@ interface SettingsState extends SettingsData {
   setStripBackground: (bg: string) => void
   setSidebarOrder: (order: PanelId[]) => void
   toggleHiddenPanel: (panel: PanelId) => void
+  togglePinnedPanel: (panel: PanelId) => void
   setRefreshInterval: (seconds: number) => void
   setPanelWidth: (width: number) => void
   setSidebarPosition: (position: SidebarPosition) => void
@@ -38,6 +44,7 @@ const DEFAULTS: SettingsData = {
   stripBackground: 'default',
   sidebarOrder:    DEFAULT_SIDEBAR_ORDER,
   hiddenPanels:    [],
+  pinnedPanels:    [],
   refreshInterval: 60,
   panelWidth:      320,
   sidebarPosition: 'right',
@@ -98,6 +105,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       : [...get().hiddenPanels, panel]
     set({ hiddenPanels })
     save({ ...get(), hiddenPanels })
+  },
+  togglePinnedPanel: (panel) => {
+    const current = get().pinnedPanels
+    let pinnedPanels: PanelId[]
+    if (current.includes(panel)) {
+      pinnedPanels = current.filter((p) => p !== panel)
+    } else {
+      if (current.length >= MAX_PINNED_PANELS) return
+      pinnedPanels = [...current, panel]
+    }
+    set({ pinnedPanels })
+    save({ ...get(), pinnedPanels })
   },
   setRefreshInterval: (refreshInterval) => {
     set({ refreshInterval })

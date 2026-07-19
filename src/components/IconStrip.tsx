@@ -1,36 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  Home, Files, MessageSquare, Bell, Code2, CheckSquare,
-  StickyNote, Users, Bookmark, FolderKanban, CalendarDays, User,
-  Settings, X, ShieldCheck, Search, Sparkles, Wrench,
+  Settings, X,
   ChevronUp, ChevronDown,
   // TEMP-SCROLL-TEST: iconos solo para probar el scroll — eliminar junto con TEMP_TEST_ITEMS
   Star, Heart, Camera, Music, Map, Cloud, Zap, Gift, Globe, Rocket,
 } from "lucide-react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import type { PanelId, NavItem } from "../types"
+import { ALL_NAV_META } from "../lib/navMeta"
 import NavIcon from "./NavIcon"
+import ContextMenu from "./shared/ContextMenu"
 import { useNotificationsStore } from "../store/notificationsStore"
-import { useSettingsStore } from "../store/settingsStore"
-
-const ALL_NAV_META: Partial<Record<PanelId, NavItem>> = {
-  home:      { id: "home",      icon: Home,          label: "Home"      },
-  search:    { id: "search",    icon: Search,        label: "Buscar"    },
-  files:     { id: "files",     icon: Files,         label: "Files"     },
-  chat:      { id: "chat",      icon: MessageSquare, label: "Chat"      },
-  alerts:    { id: "alerts",    icon: Bell,          label: "Alerts"    },
-  snippets:  { id: "snippets",  icon: Code2,         label: "Snippets"  },
-  tasks:     { id: "tasks",     icon: CheckSquare,   label: "Tasks"     },
-  notes:     { id: "notes",     icon: StickyNote,    label: "Notes"     },
-  contacts:  { id: "contacts",  icon: Users,         label: "Contacts"  },
-  bookmarks: { id: "bookmarks", icon: Bookmark,      label: "Bookmarks" },
-  projects:  { id: "projects",  icon: FolderKanban,  label: "Projects"  },
-  calendar:  { id: "calendar",  icon: CalendarDays,  label: "Calendar"  },
-  vault:     { id: "vault",     icon: ShieldCheck,   label: "Vault"     },
-  tools:     { id: "tools",     icon: Wrench,        label: "Tools"     },
-  services:  { id: "services",  icon: Sparkles,      label: "Servicios" },
-  profile:   { id: "profile",   icon: User,          label: "Profile"   },
-}
+import { MAX_PINNED_PANELS, useSettingsStore } from "../store/settingsStore"
 
 const settingsItem: NavItem = { id: "settings", icon: Settings, label: "Settings" }
 
@@ -81,6 +62,16 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollUp, setCanScrollUp]     = useState(false)
   const [canScrollDown, setCanScrollDown] = useState(false)
+
+  // Menú contextual (click derecho) para fijar/desfijar en la barra de control
+  const pinnedControlPanels = useSettingsStore((s) => s.pinnedPanels)
+  const togglePinnedPanel   = useSettingsStore((s) => s.togglePinnedPanel)
+  const [menu, setMenu] = useState<{ x: number; y: number; panel: PanelId } | null>(null)
+
+  const openMenu = (panel: PanelId) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY, panel })
+  }
 
   const orderedNavItems = useMemo(
     () =>
@@ -133,6 +124,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
                     item={item}
                     isActive={activePanel === item.id}
                     onClick={() => onPanelChange(item.id)}
+                    onContextMenu={openMenu(item.id)}
                   />
                   {unreadCount > 0 && (
                     <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
@@ -148,6 +140,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
                   item={item}
                   isActive={activePanel === item.id}
                   onClick={() => onPanelChange(item.id)}
+                  onContextMenu={openMenu(item.id)}
                 />
               </div>
             )
@@ -194,6 +187,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
               item={item}
               isActive={activePanel === id}
               onClick={() => onPanelChange(id)}
+              onContextMenu={openMenu(id)}
             />
           )
         })}
@@ -201,6 +195,7 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
           item={settingsItem}
           isActive={activePanel === "settings"}
           onClick={() => onPanelChange("settings")}
+          onContextMenu={openMenu("settings")}
         />
         <button
           onClick={() => getCurrentWindow().close()}
@@ -210,6 +205,29 @@ export default function IconStrip({ activePanel, onPanelChange }: IconStripProps
           <X size={16} />
         </button>
       </div>
+
+      {menu && (() => {
+        const isPinned = pinnedControlPanels.includes(menu.panel)
+        const pinFull = !isPinned && pinnedControlPanels.length >= MAX_PINNED_PANELS
+        return (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              {
+                label: isPinned
+                  ? "Desfijar de la barra de control"
+                  : pinFull
+                    ? `Fijar (máximo ${MAX_PINNED_PANELS} fijados)`
+                    : "Fijar en la barra de control",
+                disabled: pinFull,
+                onClick: () => togglePinnedPanel(menu.panel),
+              },
+            ]}
+          />
+        )
+      })()}
     </div>
   )
 }
