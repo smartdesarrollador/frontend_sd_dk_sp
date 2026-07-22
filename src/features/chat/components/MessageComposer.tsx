@@ -2,7 +2,12 @@ import { useRef, useState } from 'react'
 import { Send, X, Paperclip, FileText } from 'lucide-react'
 import type { Message } from '../types'
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
+// Tipos aceptados por la categoría chat_attachment del backend (utils/uploads.py).
+// Solo preselecciona el diálogo del SO; el backend es la autoridad.
+const CHAT_ACCEPT =
+  '.png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.csv,.zip,.docx,.xlsx'
+// Fallback mientras el límite del plan carga o si el endpoint no responde.
+const DEFAULT_MAX_MB = 10
 
 interface MessageComposerProps {
   replyTo: Message | null
@@ -10,19 +15,30 @@ interface MessageComposerProps {
   onSend: (content: string, file: File | null) => void
   onTyping?: () => void
   isSending: boolean
+  /** Peso máximo por archivo del plan (MB), de useUploadLimits(). */
+  maxFileMb?: number | null
 }
 
-export function MessageComposer({ replyTo, onClearReply, onSend, onTyping, isSending }: MessageComposerProps) {
+export function MessageComposer({
+  replyTo,
+  onClearReply,
+  onSend,
+  onTyping,
+  isSending,
+  maxFileMb,
+}: MessageComposerProps) {
   const [value, setValue] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const limitMb = maxFileMb ?? DEFAULT_MAX_MB
+
   const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null
     setFileError('')
-    if (picked && picked.size > MAX_FILE_BYTES) {
-      setFileError('El archivo supera los 10 MB')
+    if (picked && picked.size > limitMb * 1024 * 1024) {
+      setFileError(`El archivo supera los ${limitMb} MB`)
       return
     }
     setFile(picked)
@@ -86,6 +102,7 @@ export function MessageComposer({ replyTo, onClearReply, onSend, onTyping, isSen
         <input
           ref={fileInputRef}
           type="file"
+          accept={CHAT_ACCEPT}
           onChange={handlePick}
           className="hidden"
           aria-label="Adjuntar archivo"

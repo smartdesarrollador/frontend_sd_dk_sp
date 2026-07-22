@@ -15,6 +15,7 @@ import { useMarkRead } from '../../features/chat/hooks/useMarkRead'
 import { useConvertMessage } from '../../features/chat/hooks/useConvertMessage'
 import { useLeaveConversation } from '../../features/chat/hooks/useLeaveConversation'
 import { useChatSocket } from '../../features/chat/hooks/useChatSocket'
+import { useUploadLimits } from '../../features/plan/useUploadLimits'
 
 import type { ConversationDetail, ConvertTarget, Message } from '../../features/chat/types'
 
@@ -32,6 +33,8 @@ export default function ChatPanel() {
 
   // wsConnected state drives polling interval — starts false, updated by socket
   const [wsConnected, setWsConnected] = useState(false)
+
+  const { fileMb } = useUploadLimits()
 
   // Data hooks
   const { conversations, loading: convsLoading, refetch: refetchConversations } =
@@ -207,6 +210,7 @@ export default function ChatPanel() {
           onSend={handleSend}
           onTyping={() => sendTyping(activeConvId)}
           isSending={sending}
+          maxFileMb={fileMb}
         />
       </div>
     )
