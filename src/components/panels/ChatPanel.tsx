@@ -16,6 +16,7 @@ import { useConvertMessage } from '../../features/chat/hooks/useConvertMessage'
 import { useLeaveConversation } from '../../features/chat/hooks/useLeaveConversation'
 import { useChatSocket } from '../../features/chat/hooks/useChatSocket'
 import { useUploadLimits } from '../../features/plan/useUploadLimits'
+import { useAuthStore } from '../../store/authStore'
 
 import type { ConversationDetail, ConvertTarget, Message } from '../../features/chat/types'
 
@@ -35,6 +36,8 @@ export default function ChatPanel() {
   const [wsConnected, setWsConnected] = useState(false)
 
   const { fileMb } = useUploadLimits()
+  const plan = useAuthStore((s) => s.tenant?.plan)
+  const canUpgrade = plan !== undefined && plan !== 'enterprise'
 
   // Data hooks
   const { conversations, loading: convsLoading, refetch: refetchConversations } =
@@ -211,6 +214,7 @@ export default function ChatPanel() {
           onTyping={() => sendTyping(activeConvId)}
           isSending={sending}
           maxFileMb={fileMb}
+          canUpgrade={canUpgrade}
         />
       </div>
     )

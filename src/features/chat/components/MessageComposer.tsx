@@ -17,6 +17,8 @@ interface MessageComposerProps {
   isSending: boolean
   /** Peso máximo por archivo del plan (MB), de useUploadLimits(). */
   maxFileMb?: number | null
+  /** true si el plan del tenant admite un upgrade (no Enterprise). Muestra el CTA de mejora. */
+  canUpgrade?: boolean
 }
 
 export function MessageComposer({
@@ -26,6 +28,7 @@ export function MessageComposer({
   onTyping,
   isSending,
   maxFileMb,
+  canUpgrade,
 }: MessageComposerProps) {
   const [value, setValue] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -38,7 +41,11 @@ export function MessageComposer({
     const picked = e.target.files?.[0] ?? null
     setFileError('')
     if (picked && picked.size > limitMb * 1024 * 1024) {
-      setFileError(`El archivo supera los ${limitMb} MB`)
+      setFileError(
+        canUpgrade
+          ? `El archivo supera el límite de ${limitMb} MB de tu plan. Cambia a un plan superior para aumentar la capacidad.`
+          : `El archivo supera el límite de ${limitMb} MB.`,
+      )
       return
     }
     setFile(picked)
