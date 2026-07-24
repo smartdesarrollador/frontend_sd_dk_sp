@@ -13,6 +13,7 @@ import { useSendMessage } from '../../features/chat/hooks/useSendMessage'
 import { useSelfConversation } from '../../features/chat/hooks/useSelfConversation'
 import { useMarkRead } from '../../features/chat/hooks/useMarkRead'
 import { useConvertMessage } from '../../features/chat/hooks/useConvertMessage'
+import { useDeleteMessage } from '../../features/chat/hooks/useDeleteMessage'
 import { useLeaveConversation } from '../../features/chat/hooks/useLeaveConversation'
 import { useChatSocket } from '../../features/chat/hooks/useChatSocket'
 import { useUploadLimits } from '../../features/plan/useUploadLimits'
@@ -72,13 +73,14 @@ export default function ChatPanel() {
   // Sync socket connected state to drive polling intervals
   useEffect(() => { setWsConnected(connected) }, [connected])
 
-  const { send, sending } = useSendMessage(useCallback((msg: Message) => {
+  const { send, sending, error: sendError } = useSendMessage(useCallback((msg: Message) => {
     appendMessageRef.current(msg)
     refetchConversationsRef.current()
   }, []))
 
   const { markRead } = useMarkRead(refetchConversations)
   const { convert } = useConvertMessage()
+  const { deleteMessage } = useDeleteMessage()
   const { leave, loading: leaving } = useLeaveConversation(() => {
     setView('list')
     setActiveConvId(null)
@@ -118,6 +120,12 @@ export default function ChatPanel() {
 
   const handleConvert = async (message: Message, target: ConvertTarget) => {
     await convert(message.id, { target })
+  }
+
+  const handleDelete = async (message: Message) => {
+    if (!window.confirm('¿Eliminar este mensaje? Se liberará el espacio de su adjunto.')) return
+    const ok = await deleteMessage(message.id)
+    if (ok) refetchMessages()
   }
 
   const handleNewChatCreated = (conv: ConversationDetail) => {
@@ -195,6 +203,7 @@ export default function ChatPanel() {
           typingUser={typingUser}
           onReply={setReplyTo}
           onConvert={handleConvert}
+          onDelete={handleDelete}
         />
 
         {!connected && (
@@ -205,6 +214,10 @@ export default function ChatPanel() {
           >
             Actualizar mensajes
           </button>
+        )}
+
+        {sendError && (
+          <p className="mb-1.5 px-1 text-[10px] text-red-400">{sendError}</p>
         )}
 
         <MessageComposer

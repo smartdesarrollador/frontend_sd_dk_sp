@@ -37,7 +37,16 @@ export function useSendMessage(onSuccess?: (msg: Message) => void) {
           }),
         })
       }
-      if (!res.ok) { setError('Error enviando mensaje'); return }
+      if (!res.ok) {
+        // Surfacear el mensaje del backend (p.ej. 402: cuota de almacenamiento llena).
+        let msg = 'Error enviando mensaje'
+        try {
+          const body = await res.json() as { error?: { message?: string } }
+          if (body?.error?.message) msg = body.error.message
+        } catch { /* respuesta sin cuerpo JSON */ }
+        setError(msg)
+        return
+      }
       const msg = await res.json() as Message
       onSuccess?.(msg)
     } catch {
